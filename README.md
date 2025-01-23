@@ -3,7 +3,7 @@
 [![Discord Bot server](https://img.shields.io/discord/1263477574785564703?label=support%20server&style=flat-square&logo=Discord&logoColor=FFFFFF)](https://discord.gg/ERSk9sYWyP)
 ![License](https://img.shields.io/badge/License-MIT-orange?style=flat-square&logo=License&logoColor=FFFFFF)
 
-This is a discord bot inspired by ermiana.
+This is a discord bot inspired by [ermiana](https://github.com/canaria3406/ermiana).
 The bot provides richer embeds preview of `nhentai.com`, `wnacg.com`, and `18comic.vip`. 
 
 On top of that, this bot also provides functions like anime update notifications (data from [anigamer.com.tw](https://ani.gamer.com.tw), a site in Taiwan that provides anime content), and have a mini game that can simulate gacha to test your luck.
