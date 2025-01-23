@@ -1,4 +1,4 @@
 # 高性能bot (Kouseinou bot)
-[![](https://dcbadge.limes.pink/api/server/INVITE)](https://discord.gg/ERSk9sYWyP)
+[![My Discord (YOURUSERID)](https://img.shields.io/badge/My-Discord-%235865F2.svg)](https://discord.com/users/YOURUSERID)
 
 This is a discord bot inspired by 
