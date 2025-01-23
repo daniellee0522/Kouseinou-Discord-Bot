@@ -1,4 +1,4 @@
 # 高性能bot (Kouseinou bot)
-<img src="https://discord.com/api/guilds/1263477574785564703/widget.png?style=shield" alt="Discord Shield"/>
+[![](https://dcbadge.limes.pink/api/server/INVITE)](https://discord.gg/ERSk9sYWyP)
 
 This is a discord bot inspired by 
