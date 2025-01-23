@@ -22,11 +22,11 @@ The bot is currently hit the limit of 100 server, I will try to apply the approv
 
 ## Functions
 ### Embed preview
-When
+&emsp;&emsp;When
 ### Anime update
 ### Gacha
 
 ### Earthquake alarm in Taiwan (optional)
-this function is not available in the public bot, but you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
+&emsp;&emsp;This function is not available in the public bot, but you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
 Follow the steps bellow to deploy the function yourself:
  - use
