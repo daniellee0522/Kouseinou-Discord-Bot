@@ -10,10 +10,12 @@ On top of that, this bot also provides functions like anime update notifications
 
 ## Discord server
 [https://discord.gg/ERSk9sYWyP](https://discord.gg/ERSk9sYWyP)
+
 Any questions or issues can be asked here.
 
 ## Bot invite link
 [https://discord.com/discovery/applications/1243841697637601310](https://discord.com/discovery/applications/1243841697637601310)
+
 The bot is currently hit the limit of 100 server, I will try to apply the approvals for the privilege intents in some day.
 
 ## Functions
