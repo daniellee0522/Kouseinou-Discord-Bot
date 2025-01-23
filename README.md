@@ -32,11 +32,13 @@ The bot is currently hit the limit of 100 server, I will try to apply the approv
 &emsp;&emsp;Follow the steps bellow to deploy the function yourself:
 #### For Windows
  - Run 
+ ```cmd
   pip install pyinstaller
+ ```
 #### For Mac/Linux
- - install `g++`
- - run `cd location/of/the/file`
- - run `g++ main.cpp -o main`
+ - Install `g++`
+ - Run `cd location/of/the/file`
+ - Run `g++ main.cpp -o main`
  You will see a file `main` in the location you specified. Put the file undet the `/main` folder.
 
  After that, Install 地牛 Wake UP! in your computer.
