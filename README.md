@@ -3,10 +3,10 @@
 [![Discord Bot server](https://img.shields.io/discord/1263477574785564703?label=support%20server&style=flat-square&logo=Discord&logoColor=FFFFFF)](https://discord.gg/ERSk9sYWyP)
 ![License](https://img.shields.io/badge/License-MIT-orange?style=flat-square&logo=License&logoColor=FFFFFF)
 
-    This is a discord bot inspired by [ermiana](https://github.com/canaria3406/ermiana).
-    The bot provides richer embeds preview of `nhentai.com`, `wnacg.com`, and `18comic.vip`. 
+This is a discord bot inspired by [ermiana](https://github.com/canaria3406/ermiana).
+The bot provides richer embeds preview of `nhentai.com`, `wnacg.com`, and `18comic.vip`. 
 
-    On top of that, this bot also provides functions like anime update notifications (data from [anigamer.com.tw](https://ani.gamer.com.tw), a site in Taiwan that provides anime content), and have a mini game that can simulate gacha to test your luck.
+On top of that, this bot also provides functions like anime update notifications (data from [anigamer.com.tw](https://ani.gamer.com.tw), a site in Taiwan that provides anime content), and have a mini game that can simulate gacha to test your luck.
 
 ## Discord server
 [https://discord.gg/ERSk9sYWyP](https://discord.gg/ERSk9sYWyP)
@@ -21,12 +21,12 @@ The bot is currently hit the limit of 100 server, I will try to apply the approv
 ## Policies
 
 ## Functions
-1. Embed preview
+### Embed preview
 When
-2. Anime update
-3. Gacha
+### Anime update
+### Gacha
 
-4. Earthquake alarm in Taiwan (optional)
+### Earthquake alarm in Taiwan (optional)
 this function is not available in the public bot, but you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
 Follow the steps bellow to deploy the function yourself:
  - use
