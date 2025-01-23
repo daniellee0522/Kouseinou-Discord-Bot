@@ -6,6 +6,15 @@
 This is a discord bot inspired by ermiana.
 The bot provides richer embeds preview of `nhentai.com`, `wnacg.com`, and `18comic.vip`. 
 
-On top of that, this bot also provides functions like anime update notifications (data from [anigamer.com.tw](https://ani.gamer.com.tw), a site in Taiwan that provides anime content), and have a mini game that can simulate gacha to test your luck
+On top of that, this bot also provides functions like anime update notifications (data from [anigamer.com.tw](https://ani.gamer.com.tw), a site in Taiwan that provides anime content), and have a mini game that can simulate gacha to test your luck.
+
+## Discord server
+[https://discord.gg/ERSk9sYWyP](https://discord.gg/ERSk9sYWyP)
+Any questions or issues can be asked here.
+
+## Bot invite link
+[https://discord.com/discovery/applications/1243841697637601310](https://discord.com/discovery/applications/1243841697637601310)
+The bot is currently hit the limit of 100 server, I will try to apply the approvals for the privilege intents in some day.
 
 ## Functions
+1. Embed preview
