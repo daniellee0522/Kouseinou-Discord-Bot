@@ -28,5 +28,15 @@ The bot is currently hit the limit of 100 server, I will try to apply the approv
 
 ### Earthquake alarm in Taiwan (optional)
 &emsp;&emsp;This function is not available in the public bot, but you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
-Follow the steps bellow to deploy the function yourself:
- - use
+
+&emsp;&emsp;Follow the steps bellow to deploy the function yourself:
+#### For Windows
+ - Run 
+  pip install pyinstaller
+#### For Mac/Linux
+ - install `g++`
+ - run `cd location/of/the/file`
+ - run `g++ main.cpp -o main`
+ You will see a file `main` in the location you specified. Put the file undet the `/main` folder.
+
+ After that, Install 地牛 Wake UP! in your computer.
