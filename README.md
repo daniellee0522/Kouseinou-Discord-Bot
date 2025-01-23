@@ -18,9 +18,15 @@ Any questions or issues can be asked here.
 
 The bot is currently hit the limit of 100 server, I will try to apply the approvals for the privilege intents in some day.
 
+## Policies
+
 ## Functions
 1. Embed preview
-2. Earthquake alarm in Taiwan (optional)
-this function is not available in the public bot, but you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
+    When
+2. Anime update
+3. Gacha
+
+4. Earthquake alarm in Taiwan (optional)
+    this function is not available in the public bot, but you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
 Follow the steps bellow to deploy the function yourself:
- 1. seee
+ - use
