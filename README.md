@@ -11,7 +11,7 @@
 
 
 This is a discord bot inspired by [ermiana](https://github.com/canaria3406/ermiana).
-The bot provides richer embeds preview of `nhentai.com`, `wnacg.com`, and `18comic.vip`. 
+The bot provides richer embeds preview of `nhentai.net`, `wnacg.com`, and `18comic.vip`. 
 
 On top of that, this bot also provides functions like anime update notifications (data from [anigamer.com.tw](https://ani.gamer.com.tw), a site in Taiwan that provides anime content), and has a mini game that can simulate gacha to test your luck.
 
