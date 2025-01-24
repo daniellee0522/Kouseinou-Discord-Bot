@@ -31,7 +31,7 @@ The bot is currently hit the limit of 100 servers, I will try to apply the appro
 
 ## Functions
 ### Embed preview
-&emsp;&emsp;When the bot detect the vaild links of `nhentai.net`, `wnacg.com`, or `18comic.vip`, it will generate the embed with richer previews of the site.
+When the bot detect the vaild links of `nhentai.net`, `wnacg.com`, or `18comic.vip`, it will generate the embed with richer previews of the site.
 #### screenshots
 
 ![image](https://i.imgur.com/07vfj6h.png)
@@ -45,7 +45,7 @@ Or you can use the command `/nhentai` `/wnacg` `/jm` and type in the digit to ge
 Use `/解析網頁開關` to set that if bot should provide the embeds or not.
 
 ### Anime update
-&emsp;&emsp;You can check the what animes you can subscribe by `/新番列表`, and subscribe them with `/訂閱` or `/查詢新番`
+You can check the what animes you can subscribe by `/新番列表`, and subscribe them with `/訂閱` or `/查詢新番`
 
 ![image](https://i.imgur.com/B5oBv5V.png)
 
@@ -60,7 +60,7 @@ When the anime is updated, the bot will send message like this:
 You can also use `/訂閱列表` to check the animes you subscribed, and `/取消訂閱 <anime_name>` to unsubscribe the anime anytime you want.
 
 ### Gacha
-&emsp;&emsp;This is a simple funtion that when you type in `-1200` in chat, the bot will send gacha message like this:
+This is a simple funtion that when you type in `-1200` in chat, the bot will send gacha message like this:
 
 ![image](https://i.imgur.com/klAeQCZ.png)
 
@@ -71,14 +71,14 @@ Use `/統計` to see the stat of your gacha results and `/歸零` to empty your 
 If you are the admin of the server and want to forbid this function in specific channel, use `/上鎖`.
 
 ### Welcome message
-&emsp;&emsp;You can customize a welcome message with the bot by using `/歡迎訊息`, and when a member join in, the bot will send the message you have set.
+You can customize a welcome message with the bot by using `/歡迎訊息`, and when a member join in, the bot will send the message you have set.
 
 ### Earthquake alarm in Taiwan (optional)
-&emsp;&emsp;This function is not available in the public bot. However, you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
+This function is not available in the public bot. However, you can deploy a bot yourself and use this function to send messages to your server when the earthquake is about to happen.
 
 ![image](https://i.imgur.com/V7VxXmL.png)
 
-&emsp;&emsp;Follow the steps bellow to deploy the function yourself:
+Follow the steps bellow to deploy the function yourself:
  - Put your channel ids into the `alert.json`
  - Install `g++`
  - Run
