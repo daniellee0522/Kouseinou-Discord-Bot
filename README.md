@@ -71,6 +71,7 @@ If you are the admin of the server and want to forbid this function in specific 
 ![image](https://i.imgur.com/V7VxXmL.png)
 
 &emsp;&emsp;Follow the steps bellow to deploy the function yourself:
+ - Put your channel ids into the `alert.json`
  - Install `g++`
  - Run
 
