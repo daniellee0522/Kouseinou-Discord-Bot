@@ -31,7 +31,7 @@ The bot is currently hit the limit of 100 servers, I will try to apply the appro
 
 ## Functions
 ### Embed preview
-&emsp;&emsp;When the bot detect the vaild links of `nhentai.net`, `wnacg.com`, or `18comic.vip`, it will generate the embed with richer previews of the site.
+&emsp;&emsp;When the bot detect the vaild links of `nhentai.com`, `wnacg.com`, or `18comic.vip`, it will generate the embed with richer previews of the site.
 #### screenshots
 
 ![image](https://i.imgur.com/07vfj6h.png)
