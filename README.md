@@ -5,7 +5,7 @@
 
 # 高性能bot (Kouseinou bot)
 [![Discord Bot Status](https://img.shields.io/badge/Verified-✓%20BOT-%235865F2?style=flat-square&logo=Discord&logoColor=FFFFFF)](https://discord.com/discovery/applications/1243841697637601310)
-[![Discord Bot Install count](https://img.shields.io/badge/dynamic/json?url=https://enderdaniel.work/server_count&query=$.server_count&label=高性能bot&suffix=servers&color=%235865F2&logo=Discord&style=flat-square&logoColor=FFFFFF)](https://discord.com/discovery/applications/1243841697637601310)
+[![Discord Bot Install count](https://img.shields.io/badge/dynamic/json?url=https://enderdaniel.work/server_count&query=$.server_count&label=高性能bot&suffix=%20servers&color=%235865F2&logo=Discord&style=flat-square&logoColor=FFFFFF)](https://discord.com/discovery/applications/1243841697637601310)
 [![Discord Bot server](https://img.shields.io/discord/1263477574785564703?label=Support%20server&style=flat-square&logo=Discord&logoColor=FFFFFF)](https://discord.gg/ERSk9sYWyP)
 ![License](https://img.shields.io/badge/License-MIT-orange?style=flat-square&logo=License&logoColor=FFFFFF)
 
