@@ -2,7 +2,7 @@
   width="128"
   height="128"
   style="float:top;">
-  
+
 # 高性能bot (Kouseinou bot)
 [![Discord Bot Status](https://img.shields.io/badge/高性能bot-✓%20BOT-%235865F2?style=flat-square&logo=Discord&logoColor=FFFFFF)](https://discord.com/discovery/applications/1243841697637601310)
 [![Discord Bot server](https://img.shields.io/discord/1263477574785564703?label=support%20server&style=flat-square&logo=Discord&logoColor=FFFFFF)](https://discord.gg/ERSk9sYWyP)
@@ -24,8 +24,9 @@ Any suggestions or issues can be asked here.
 The bot is currently hit the limit of 100 servers, I will try to apply the approval for the privilege intents in some day.
 
 ## Policies
-- Terms of services
-- Private policy
+- [Terms of services](https://github.com/daniellee0522/Kouseinou-Discord-Bot/blob/main/docs/Terms_of_service.md)
+- [Private policy](https://github.com/daniellee0522/Kouseinou-Discord-Bot/blob/main/docs/Privacy_policy.md)
+
 ## Functions
 ### Embed preview
 &emsp;&emsp;When the bot detect the vaild links of `nhentai.com`, `wnacg.com`, or `18comic.vip`, it will generate the embed with richer previews of the site.
