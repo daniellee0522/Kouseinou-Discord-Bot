@@ -122,7 +122,7 @@ async def cookies(interaction: discord.Interaction, cf_clearance: str, csrftoken
 @app_commands.describe(digit="神秘數字")
 async def wnacg(interaction: discord.Interaction, digit: int):
     digit = str(digit)
-    embed = await create_wnacg_embed(digit=digit)
+    embed = create_wnacg_embed(digit=digit)
     if embed == 404:
         await interaction.response.send_message("不存在")
         return
@@ -239,7 +239,7 @@ async def on_message(msg):
                 if "wnacg.com/photos-index-aid-" in url or "wnacg.com/photos-index-page-" in url or "wnacg.com/photos-slide-aid-" in url or "wnacg.com/photos-slist-aid-" in url:
                     try:
                         digit = url[url.rfind("-")+1:-5]
-                        embed = await create_wnacg_embed(digit=digit)
+                        embed = create_wnacg_embed(digit=digit)
                         view2 = NumberView2(embed=embed)
                         await msg.channel.send(embed=embed, view=view2)
                         await msg.edit(suppress=True)
@@ -248,7 +248,7 @@ async def on_message(msg):
                 elif "wnacg.com/?ctl=photos" in url or "wnacg.com/photos-view-id-" in url:
                     try:
                         digit = find_front_page(url)
-                        embed = await create_wnacg_embed(digit=digit)
+                        embed = create_wnacg_embed(digit=digit)
                         view2 = NumberView2(embed=embed)
                         await msg.channel.send(embed=embed, view=view2)
                         await msg.edit(suppress=True)
