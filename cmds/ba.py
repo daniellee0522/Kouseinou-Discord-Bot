@@ -7,6 +7,7 @@ import datetime
 import pytz
 from functions.slot import lock_channel,unlock_channel
 from core.classes import Cog_Extension
+import config
 
 class 抽卡指令(Cog_Extension):
     @app_commands.command(name="統計", description="統計抽卡數據")
@@ -17,7 +18,7 @@ class 抽卡指令(Cog_Extension):
         user_id = str(interaction.user.id)
         user = interaction.user
         name = str(user.global_name)
-        with open('json/gacha.json', 'r', encoding = 'utf8') as file:
+        with open(config.DATA_DIR / 'gacha.json', 'r', encoding = 'utf8') as file:
             data = json.load(file)
         try:
             user = data[user_id].copy()
@@ -47,11 +48,11 @@ class 抽卡指令(Cog_Extension):
         """
 
         user_id = str(interaction.user.id)
-        with open('json/gacha.json', 'r', encoding = 'utf8') as file:
+        with open(config.DATA_DIR / 'gacha.json', 'r', encoding = 'utf8') as file:
             data = json.load(file)
         try:
             data.pop(user_id)
-            with open('json/gacha.json','w',encoding='utf8') as f:
+            with open(config.DATA_DIR / 'gacha.json','w',encoding='utf8') as f:
                 json.dump(data,f,ensure_ascii=False,indent = 4)
             await interaction.response.send_message("已歸零")
         except:
@@ -96,19 +97,22 @@ class 抽卡指令(Cog_Extension):
     
     @app_commands.command(name="換池", description="更換PU角色")
     async def 換池(self,interaction:discord.Interaction):
-        with open('json/pu.json','r',encoding='utf8') as f:
+        with open(config.DATA_DIR / 'pu.json','r',encoding='utf8') as f:
             data = json.load(f)
             keylist = list(data.keys())
             print(keylist)
             for i in range(len(keylist)):
                 if data[keylist[i]] == True:
+                    #print(1)
                     data[keylist[i]] = False
                     try:
+                        #print(data[keylist[i+1]])
                         data[keylist[i+1]] = True
                     except:
+                        #print(data[keylist[0]])
                         data[keylist[0]] = True
                     break
-        with open('json/pu.json','w',encoding='utf8') as f:
+        with open(config.DATA_DIR / 'pu.json','w',encoding='utf8') as f:
             json.dump(data,f,ensure_ascii=False,indent = 4)
         await interaction.response.send_message("已換池")
 async def setup(bot):

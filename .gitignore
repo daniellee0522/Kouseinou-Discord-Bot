@@ -1,1 +1,33 @@
-.DS_store
+# 憑證與設定 (請複製 *.example 並填入真實值)
+data/token.json
+data/cookies.json
+data/api.json
+
+# 執行時產生的資料
+data/gacha.json
+data/sub.json
+server_count.json
+data/message_count.json
+data/lock.json
+data/block.json
+data/welcome.json
+data/channel.json
+data/permission.json
+data/embed_permission.json
+data/pu.json
+data/prompt.json
+
+# 快取
+data/nh.json
+
+# 日誌
+*.log
+
+# 備份檔案
+備份/
+bot copy.py
+
+# macOS 系統檔
+._*
+.DS_Store
+__MACOSX/

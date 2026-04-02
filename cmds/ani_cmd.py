@@ -7,6 +7,7 @@ from discord.ui import Button, View
 from discord import app_commands
 from functions.ani_gamer import anime_get_info, anime_lst, anime_get_info_add
 from core.classes import Cog_Extension
+import config
 
 
 class 動畫瘋指令(Cog_Extension):
@@ -26,7 +27,7 @@ class 動畫瘋指令(Cog_Extension):
             await interaction.response.defer()
             inf = anime_get_info(anime_name, R_18)
             if inf != [] and inf != "fail to connect":
-                with open('json/sub.json', 'r', encoding='utf8') as f:
+                with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
                     data = json.load(f)
                 lst = []
                 try:
@@ -173,7 +174,7 @@ class 動畫瘋指令(Cog_Extension):
             if server_id == None:
                 await interaction.response.send_message("Not available")
                 return
-            with open('json/sub.json', 'r', encoding='utf8') as f:
+            with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
                 data = json.load(f)
             try:
                 for i in range(len(data[str(server_id)])):
@@ -187,7 +188,7 @@ class 動畫瘋指令(Cog_Extension):
                             if "(年齡限制)" in value:
                                 await interaction.response.send_message("已刪除"+value)
                                 data[str(server_id)].pop(key)
-                                with open('json/sub.json', 'w', encoding='utf8') as f:
+                                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
                                     json.dump(
                                         data, f, ensure_ascii=False, indent=4)
                                 return
@@ -196,7 +197,7 @@ class 動畫瘋指令(Cog_Extension):
                             if "(年齡限制)" not in value:
                                 await ("已刪除"+value)
                                 data[str(server_id)].pop(key)
-                                with open('json/sub.json', 'w', encoding='utf8') as f:
+                                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
                                     json.dump(
                                         data, f, ensure_ascii=False, indent=4)
                                 return
@@ -211,7 +212,7 @@ class 動畫瘋指令(Cog_Extension):
                             else:
                                 await interaction.response.send_message("已刪除"+data[str(server_id)][key]["name"])
                                 data[str(server_id)].pop(key)
-                                with open('json/sub.json', 'w', encoding='utf8') as f:
+                                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
                                     json.dump(
                                         data, f, ensure_ascii=False, indent=4)
                                 return
@@ -219,7 +220,7 @@ class 動畫瘋指令(Cog_Extension):
                         for key, value in dict_.items():
                             await interaction.response.send_message("已刪除"+data[str(server_id)][key]["name"])
                             data[str(server_id)].pop(key)
-                            with open('json/sub.json', 'w', encoding='utf8') as f:
+                            with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
                                 json.dump(
                                     data, f, ensure_ascii=False, indent=4)
                             return
@@ -252,7 +253,7 @@ class 動畫瘋指令(Cog_Extension):
             )
             embed.set_author(
                 name="巴哈姆特動畫瘋", icon_url="https://i.imgur.com/RF7sMkY.png")
-            with open('json/sub.json', 'r', encoding='utf8') as f:
+            with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
                 data = json.load(f)
             try:
                 if data[str(server_id)] == []:
@@ -261,7 +262,7 @@ class 動畫瘋指令(Cog_Extension):
 
                 data[str(server_id)].sort(key=lambda x: (
                     x["update_date"], x["update_time"], x["name"]))
-                with open('json/sub.json', 'w', encoding='utf8') as f:
+                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=4)
 
                 for anime in data[str(server_id)]:
@@ -291,19 +292,19 @@ class 動畫瘋指令(Cog_Extension):
                 await interaction.response.send_message("Not available")
                 return
             channel_id = interaction.channel_id
-            with open('json/channel.json', 'r', encoding='utf8') as f:
+            with open(config.DATA_DIR / 'channel.json', 'r', encoding='utf8') as f:
                 j_data = json.load(f)
             try:
                 if j_data[str(server_id)] == channel_id:
                     await interaction.response.send_message(content="這個頻道已經設定過了")
                 else:
                     j_data[str(server_id)] = channel_id
-                    with open('json/channel.json', 'w', encoding='utf8') as f:
+                    with open(config.DATA_DIR / 'channel.json', 'w', encoding='utf8') as f:
                         json.dump(j_data, f, ensure_ascii=False, indent=4)
                     await interaction.response.send_message(content="已將通知設定在此頻道")
             except:
                 j_data[str(server_id)] = channel_id
-                with open('json/channel.json', 'w', encoding='utf8') as f:
+                with open(config.DATA_DIR / 'channel.json', 'w', encoding='utf8') as f:
                     json.dump(j_data, f, ensure_ascii=False, indent=4)
                 await interaction.response.send_message(content="已將通知設定在此頻道")
         except AttributeError:

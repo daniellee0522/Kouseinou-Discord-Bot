@@ -5,6 +5,7 @@ import discord
 from core.classes import Cog_Extension
 import json
 from datetime import datetime
+import config
 
 
 class EarthQuakeWake(Cog_Extension):
@@ -17,7 +18,7 @@ class EarthQuakeWake(Cog_Extension):
             await self.bot.wait_until_ready()
             while not self.bot.is_closed():
                 # 爬取資訊
-                with open("json/earthquake.json", "r", encoding="utf-8") as f:
+                with open(config.DATA_DIR / "test.json", "r", encoding="utf-8") as f:
                     data = json.load(f)
 
                 if data["flag"] == "1":
@@ -41,13 +42,13 @@ class EarthQuakeWake(Cog_Extension):
                             description=f"**預計{data['抵達秒數']}秒後抵達\n請注意安全。**。"
                         )
                     # 發送至各頻道
-                    with open("json/alert.json", "r") as f:
+                    with open(config.DATA_DIR / "alert.json", "r") as f:
                         channel = json.load(f)
                     for channel_id in channel:
                         self.channel = self.bot.get_channel(channel_id)
                         await self.channel.send(embed=embed)
                     data["flag"] = "0"
-                    with open('json/earthquake.json', 'w', encoding='utf8') as f:
+                    with open(config.DATA_DIR / 'test.json', 'w', encoding='utf8') as f:
                         json.dump(data, f, ensure_ascii=False, indent=4)
                 await asyncio.sleep(0.2)
         self.bot.loop.create_task(earth_quake_task2())

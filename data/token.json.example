@@ -1,0 +1,23 @@
+{
+    "token": "YOUR_DISCORD_BOT_TOKEN",
+    "openai_api_key": "YOUR_OPENAI_API_KEY",
+    "cwa_api_token": "YOUR_CWA_API_TOKEN",
+    "baha_username": "YOUR_BAHA_USERNAME",
+    "baha_password": "YOUR_BAHA_PASSWORD",
+    "owner_id": 0,
+    "guild_ids": [0, 0],
+    "jm_log_channel_id": 0,
+    "nh_proxy_url": "https://your-worker.workers.dev",
+    "pic_proxy_url": "https://your-domain.example.com/pic",
+    "media_base_url": "https://your-domain.example.com/media",
+    "video_path": "/path/to/your/videos",
+    "md5_json_path": "/path/to/md5.json",
+    "sheet_user_columns_check": {
+        "DISCORD_USER_ID_1": 5,
+        "DISCORD_USER_ID_2": 6
+    },
+    "sheet_user_columns_pay": {
+        "DISCORD_USER_ID_1": 4,
+        "DISCORD_USER_ID_2": 5
+    }
+}

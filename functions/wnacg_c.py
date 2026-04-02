@@ -2,117 +2,139 @@ import requests
 from bs4 import BeautifulSoup, NavigableString
 import re
 import discord
-from requests_html import HTMLSession
-from urllib.parse import urljoin, urlparse
 from discord.ui import Button, View
 import json
 import logging
 import os
-import aiohttp
+import asyncio
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from sec5sh import Sec5sh
+import config
 
+DATA_FILE = 'message_count.json'
 
-AID_PATTERN = re.compile(r"aid-(\d+)\.html")
-IMG_URL_PATTERN = re.compile(r'img(\d+)\.qy0\.ru')
+def load_data(guild_id, num=1):
+    if guild_id in config.GUILD_IDS:
+        return
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+    if str(guild_id) not in data:
+        data[str(guild_id)] = num
+    else:
+        data[str(guild_id)] += num
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
-async def wnacg_crawl(session: aiohttp.ClientSession, digit):
+async def wnacg_crawl(digit, sec5sh=None):
     url = f"https://www.wnacg.com/photos-index-page-1-aid-{digit}.html"
+
+    """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
     }
 
+    response = requests.get(url, headers=headers)
+    """
+    # sec5sh = Sec5sh()
+    response = await sec5sh.request(url)
     try:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                return 404
-            html = await response.text()
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            info = soup.find('div', {"class": "asTBcell uwconn"})
-            title = soup.find("div", {"class": "userwrap"})
-            
-            # 簡化標題提取邏輯
-            for item in title:
-                if isinstance(item, NavigableString):
-                    if str(item) == "\n":
-                        continue
-                    else:
-                        title = str(item)
-                        break
-                if item.text == "\n":
-                    continue
-                else:
-                    title = item.text
-                    break
-            
-            link_div = soup.find("div", {"class": "pic_box tb"})
-            href = link_div.find('a').get('href')
-            link = "https://www.wnacg.com/" + href
-
-            # 提取縮圖
-            img_tag = soup.find_all('img')[1]
-            src = img_tag.get('src')
-            if "//" not in soup.find_all('img')[1].get('src')[2:]:
-                thumbnail = "https://" + soup.find_all('img')[1].get('src')[2:]
+        soup = BeautifulSoup(response, 'html.parser')
+        # print(soup)
+        info = soup.find('div', {"class": "asTBcell uwconn"})
+        tag_lst = []
+        title = soup.find("div", {"class": "userwrap"})
+    except:
+        return 404
+    link = soup.find("div", {"class": "pic_box tb"})
+    anchor_element = link.find('a')
+    href = anchor_element.get('href')
+    link = "https://www.wnacg.com/" + href
+    # print(link)
+    for item in title:
+        if isinstance(item, NavigableString):
+            if str(item) == "\n":
+                continue
             else:
-                thumbnail = "https:" + soup.find_all('img')[1].get('src')[2:]
+                title = str(item)
+                break
+        if item.text == "\n":
+            continue
+        else:
+            title = item.text
+            break
+    # print(title)
+    thumbnail = "https:" + soup.select_one("#bodywrap > div > div.asTBcell.uwthumb > img").get("src").replace("////","//")
+    # print(thumbnail)
+    for item in info:
+        if "頁數" in str(item):
+            page = str(item)[str(item).index("：")+1:str(item).index("P")]
+        if "標籤" in str(item):
+            for i, tag in enumerate(item):
+                if i != 0 and "+TAG" not in str(tag) and "\n" not in str(tag):
+                    tag_lst.append(tag.text)
+        # print(item.text)
+    # print(page)
+    # print(tag_lst)
 
-            # 提取頁數與標籤
-            page = "0"
-            tag_lst = []
-            info_text = info.get_text()
-            if "頁數" in info_text:
-                # 簡單正則提取數字
-                page_match = re.search(r'頁數：(\d+)P', info_text)
-                page = page_match.group(1) if page_match else "0"
-            
-            tags = info.find_all('a', href=re.compile(r"index-tag"))
-            tag_lst = [t.get_text() for t in tags]
+    # comics = soup.find_all("li", class_="gallary_item")
 
-            return title, thumbnail, page, tag_lst, link
-    except Exception as e:
-        print(f"Crawl error: {e}")
-        return 404
+    return title, thumbnail, page, tag_lst, link
 
 
-async def create_wnacg_embed(session: aiohttp.ClientSession, digit):
+async def create_wnacg_embed(digit, sec5sh=None):
     url = f"https://www.wnacg.com/photos-index-page-1-aid-{digit}.html"
-    
-    # 呼叫異步版的爬蟲函數
-    result = await wnacg_crawl(session, digit)
-    if result == 404:
-        return 404
-        
-    title, thumbnail, page, tag_lst, link = result
-    
+    try:
+        title, thumbnail, page, tag_lst, link = await wnacg_crawl(
+            digit=digit, sec5sh=sec5sh)
+    except:
+        error_code = await wnacg_crawl(
+            digit=digit, sec5sh=sec5sh)
+        return error_code
     embed = discord.Embed(title=title, url=url, color=0x3498db)
     embed.set_thumbnail(url=thumbnail)
-    
-    # 異步獲取第一頁圖片
-    img = await find_img_new(session, digit, page, page_num=1)
-    img += "?1?TRUE" # 這裡加上標記以便 View 辨識
-    
+    img = await find_img_new(digit=digit, page=page, page_num=1, sec5sh=sec5sh)
+    # img = test_if_exist(img)
+    img += "?TRUE"
+    # print(img)
     embed.set_image(url=img)
 
-    if tag_lst:
-        embed.add_field(name="標籤", value=",".join(tag_lst))
-        
+    if tag_lst != []:
+        str_ = ""
+        for i, item in enumerate(tag_lst):
+            if i+1 != len(tag_lst):
+                str_ += item + ","
+            else:
+                str_ += item
+        embed.add_field(name="標籤", value=str_)
+    # embed.set_footer(text="1")
     embed.add_field(name="頁數", value=page)
-    embed.set_author(name="wnacg", icon_url="https://i.imgur.com/tZ3fqmm.jpeg")
-    
+    embed.set_author(
+        name="wnacg", icon_url="https://i.imgur.com/tZ3fqmm.jpeg")
     return embed
 
 
-async def find_img_new(session: aiohttp.ClientSession, digit, page, page_num=1, test=False):
-    index = (int(page_num) - 1) // 12 + 1
+async def find_img_new(digit, page, page_num=1,test=False, sec5sh=None):
+    if sec5sh is None:
+        sec5sh = Sec5sh()
+    if int(page_num) % 12 == 0 and int(page_num) != 0:
+        index = int(page_num) // 12
+    else:
+        index = int(page_num) // 12 + 1
     url = f"https://www.wnacg.com/photos-index-page-{index}-aid-{digit}.html"
-    headers = {"User-Agent": "Mozilla/5.0 ..."} # 簡略
+    headers = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3" }
+    response = await sec5sh.request(url)
+    soup = BeautifulSoup(response, 'html.parser')
 
-    async with session.get(url, headers=headers) as response:
-        html = await response.text()
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        divs = soup.find_all("div", class_="pic_box tb")
-        name = [n.text for n in soup.find_all("span", class_="name tb")]
+
+    # 找到所有 class="pic_box tb" 的 div
+    divs = soup.find_all("div", class_="pic_box tb")
+
+    name = soup.find_all("span", class_="name tb")
+    name = [n.text for n in name]
 
     # 提取所有 img 標籤的 src 屬性
     img_urls = [img["src"] for div in divs for img in div.find_all("img")]
@@ -137,16 +159,17 @@ async def find_img_new(session: aiohttp.ClientSession, digit, page, page_num=1, 
     if test:
         return img
     else:
-        return await test_if_exist(session=session, url=img)
+        data = await test_if_exist(img)
+        return data
 
-async def test_if_exist(session: aiohttp.ClientSession, url):
-    """異步檢測圖片是否存在"""
-    try:
-        async with session.head(url, timeout=5) as resp:
-            if resp.status != 200:
-                return IMG_URL_PATTERN.sub(lambda m: f"img{int(m.group(1)) + 1}.qy0.ru", url)
-            return url
-    except:
+async def test_if_exist(url):
+    sec5sh = Sec5sh()
+    headers = { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3" }
+    response = await sec5sh.read(url)
+    if not response:
+        print(f"Image not found: {url}")
+        return re.sub(r'img(\d+)\.qy0\.ru', lambda m: f"img{int(m.group(1)) + 1}.qy0.ru", url)
+    else:
         return url
     
 
@@ -220,11 +243,11 @@ def replace_num_with_other(s1, s2):
     return s1
 
 class NumberView2(View):
-    def __init__(self,session: aiohttp.ClientSession, embed:discord.Embed=None):
+    def __init__(self,embed:discord.Embed=None):
         super().__init__(timeout=None)
         # self.message = message
         self.number = 1
-        self.session = session
+        self.s = Sec5sh()
 
         if embed != None:
             embed_dict = {i.name: i.value for i in embed.fields}
@@ -237,8 +260,8 @@ class NumberView2(View):
     @discord.ui.button(label='<<', style=discord.ButtonStyle.gray, custom_id="0000")
     async def decreasetostart(self, interaction: discord.Interaction, button: Button):
         test = False
-        # if interaction.guild:
-            # load_data(interaction.guild.id)
+        if interaction.guild:
+            load_data(interaction.guild.id)
 
         embed = interaction.message.embeds[0]
         digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
@@ -254,7 +277,7 @@ class NumberView2(View):
 
         await interaction.response.defer()
 
-        img = await find_img_new(self.session, digit=digit, page=page, page_num=1, test=test) + "?TRUE"
+        img = await find_img_new(digit, page, 1, test=test, sec5sh=self.s) + "?TRUE"
         if test:
             img = re.sub(r"img(\d+)\.qy0\.ru", match1.group(0), img)
 
@@ -272,8 +295,8 @@ class NumberView2(View):
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="1111")
     async def decrease(self, interaction: discord.Interaction, button: Button):
         test = False
-        # if interaction.guild:
-            # load_data(interaction.guild.id)
+        if interaction.guild:
+            load_data(interaction.guild.id)
 
         embed = interaction.message.embeds[0]
         digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
@@ -291,7 +314,7 @@ class NumberView2(View):
                 page = item.value
 
         await interaction.response.defer()
-        img = await find_img_new(self.session, digit=digit, page=page, page_num=num,test=test) + "?TRUE"
+        img = await find_img_new(digit=digit, page=page, page_num=num,test=test, sec5sh=self.s) + "?TRUE"
         if test:
             img = re.sub(r"img(\d+)\.qy0\.ru", match1.group(0), img)
         # img = test_if_exist(img)
@@ -311,13 +334,14 @@ class NumberView2(View):
     @discord.ui.button(label='>', style=discord.ButtonStyle.gray, custom_id="3333")
     async def increase(self, interaction: discord.Interaction, button: Button):
         test = False
-        # if interaction.guild:
-            # load_data(interaction.guild.id)
+        if interaction.guild:
+            load_data(interaction.guild.id)
 
         embed = interaction.message.embeds[0]
         digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
 
         print(embed.image.url.split("?")[-1])
+        logging.info(embed.image.url.split("?"))
 
         if "TRUE" in embed.image.url.split("?")[-1]:
             match1 = re.search(r'img(\d+)\.qy0\.ru', embed.image.url)
@@ -335,7 +359,7 @@ class NumberView2(View):
 
         await interaction.response.defer()
 
-        img = await find_img_new(self.session, digit=digit, page=page, page_num=num, test=test) + "?TRUE"
+        img = await find_img_new(digit, page, num, test=test, sec5sh=self.s) + "?TRUE"
         if test:
             img = re.sub(r"img(\d+)\.qy0\.ru", match1.group(0), img)
         # img = test_if_exist(img)
@@ -352,8 +376,8 @@ class NumberView2(View):
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="4444")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
         test = False
-        # if interaction.guild:
-            # load_data(interaction.guild.id)
+        if interaction.guild:
+            load_data(interaction.guild.id)
 
         embed = interaction.message.embeds[0]
 
@@ -369,7 +393,7 @@ class NumberView2(View):
 
         await interaction.response.defer()
 
-        img = await find_img_new(self.session, digit=digit, page=page, page_num=page, test=test) + "?TRUE"
+        img = await find_img_new(digit, page=page, page_num=page, test=test, sec5sh=self.s) + "?TRUE"
         if test:
             img = re.sub(r"img(\d+)\.qy0\.ru", match1.group(0), img)
         # img = test_if_exist(img)
@@ -384,5 +408,12 @@ class NumberView2(View):
 
 
 if __name__ == "__main__":
-    digit = "317161"
-    print(find_img_new(digit, 1, 1, test=False))
+    digit = "220055"
+    async def test():
+        test = await wnacg_crawl(digit, sec5sh=Sec5sh())
+        print(test)
+    asyncio.run(test())
+    url = f"https://www.wnacg.com/photos-index-page-1-aid-{digit}.html"
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    print(soup)

@@ -1,3 +1,6 @@
+import json
+import datetime
+import pytz
 import discord
 from discord.ext import commands
 from discord.ui import Button, View
@@ -15,7 +18,8 @@ class Embed開關指令(Cog_Extension):
             Choice(name="巴哈場外", value="baha"),
             Choice(name="nhentai", value="nh"),
             Choice(name="wnacg", value="wn"),
-            Choice(name="禁漫天堂", value="jm")
+            Choice(name="禁漫天堂", value="jm"),
+            Choice(name="xvideo", value="andy")
         ]
     )
     async def 場外開關(self, interaction: discord.Interaction, website: Choice[str]):

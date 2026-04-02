@@ -1,27 +1,34 @@
 import json
 import requests
 from bs4 import BeautifulSoup
+import config
 
 
 #return = [動畫名,動畫集數,播放網址,動畫縮圖]
 def anime_get_info(input_name,R_18="n"):
     input_name = input_name.lower()
+    count = 1
     search_lst = []
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
 }
     r = requests.get('https://ani.gamer.com.tw/', headers=headers)
     if r.status_code == 200:
+        #print(f'請求成功：{r.status_code}')
         soup = BeautifulSoup(r.text, 'html.parser')
+        # print(block_video)
         newanime_item = soup.select_one('.timeline-ver > .newanime-block')
         anime_items = newanime_item.select('.newanime-date-area:not(.premium-block)')
+        # print(type(anime_items))
 
         # 依序針對每個動畫區塊擷取資料
         for anime_item in anime_items:
             try:
                 anime_name = anime_item.find('p', class_='anime-name').text.strip()
                 anime_name2 = anime_name.lower()
+                # print(anime_name)
             except:
+                # print("no anime name")
                 continue
             if input_name in anime_name2:
                 if R_18 == "R" or R_18 == "r":
@@ -32,12 +39,16 @@ def anime_get_info(input_name,R_18="n"):
                     except:
                         continue
                 search_lst.append(anime_name)
+                #print(anime_name)
                 anime_episode = anime_item.select_one('.anime-episode').text.strip()
                 search_lst.append(anime_episode)
+                #print(anime_episode)
                 anime_href = anime_item.select_one('a.anime-card-block').get('href')
                 search_lst.append('https://ani.gamer.com.tw/'+anime_href)
+                #print('https://ani.gamer.com.tw/'+anime_href)
                 anime_image = anime_item.select_one('.lazyload').get('data-src')
                 search_lst.append(anime_image)
+                #print(anime_image)
                 return search_lst
             else:
                 continue 
@@ -49,7 +60,7 @@ def anime_get_info(input_name,R_18="n"):
 #return = [動畫名,動畫集數,星期幾更新,幾點更新]
 def anime_get_info_add(input_name,server_id,R_18="n"):
     input_name = input_name.lower()
-    with open('json/sub.json',encoding = "utf8") as f :
+    with open(config.DATA_DIR / 'sub.json',encoding = "utf8") as f :
         data= json.load(f)
     week_lst=["一","二","三","四","五","六","日"]
     try:
@@ -124,7 +135,7 @@ def anime_get_info_add(input_name,server_id,R_18="n"):
                 except KeyError:
                     data[str(server_id)]=[]
                     data[str(server_id)].append(d)
-                with open('json/sub.json',"w",encoding = "utf8") as f:
+                with open(config.DATA_DIR / 'sub.json',"w",encoding = "utf8") as f:
                     json.dump(data,f,ensure_ascii=False,indent = 4)
                     return anime_name
             else:
@@ -183,7 +194,7 @@ def anime_lst():
 
 def check_and_update(index,server_id):         #判斷動畫是否更新
     week_lst=["一","二","三","四","五","六","日"]
-    with open('json/sub.json','r',encoding='utf8') as f:
+    with open(config.DATA_DIR / 'sub.json','r',encoding='utf8') as f:
         data=json.load(f)
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
@@ -224,12 +235,12 @@ def check_and_update(index,server_id):         #判斷動畫是否更新
                         lst.append(anime_href)
                         lst.append(anime_image)
 
-                        with open('json/sub.json','r',encoding='utf8') as f:
+                        with open(config.DATA_DIR / 'sub.json','r',encoding='utf8') as f:
                             data=json.load(f)
                         data[str(server_id)][index]["update_date"] = anime_formed_date
                         data[str(server_id)][index]["update_time"] = anime_formed_time
                         data[str(server_id)][index]["episode"] = anime_episode
-                        with open('json/sub.json','w',encoding='utf8') as f:
+                        with open(config.DATA_DIR / 'sub.json','w',encoding='utf8') as f:
                             json.dump(data,f,ensure_ascii=False,indent = 4)
                         return lst
                     else:
@@ -239,7 +250,7 @@ def check_and_update(index,server_id):         #判斷動畫是否更新
         data[str(server_id)].pop(index)
         if data[str(server_id)] == []:
             data.pop(str(server_id))
-        with open('json/sub.json','w',encoding='utf8') as f:
+        with open(config.DATA_DIR / 'sub.json','w',encoding='utf8') as f:
             json.dump(data,f,ensure_ascii=False,indent = 4)
         return "no more update"
     except:

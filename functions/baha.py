@@ -2,15 +2,11 @@ import re
 from requests_html import HTMLSession
 import bs4
 import urllib.request as req
+from urllib.parse import quote
 import requests
 import pandas as pd
 import discord
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-import os
-
-
-USERNAME = os.getenv("baha_username")
-PASSWORD = os.getenv("baha_password")
 
 
 class Conf:
@@ -26,10 +22,10 @@ class Conf:
 
 
 def config_manager():
-    # Return a dictionary with the necessary configuration
+    import config as _cfg
     return {
-        'BHUD': f'{USERNAME}',
-        'BHPD': f'{PASSWORD}'
+        'BHUD': _cfg.BAHA_USERNAME,
+        'BHPD': _cfg.BAHA_PASSWORD
     }
 
 
@@ -138,6 +134,8 @@ def bahaog(url, BAHAENUR, BAHARUNE, sac_bh):
         except AttributeError:
             pass
 
+        # print(thumbnail)
+        # print(description)
         return embed
     except:
         reload_baha_tk(sac_bh)
@@ -154,6 +152,7 @@ def bahaog(url, BAHAENUR, BAHARUNE, sac_bh):
         title = soup.select_one('meta[property="og:title"]').get('content')
         embed = discord.Embed(title=title, url=url)
         embed.set_author(name="巴哈姆特電玩資訊站")
+        # print(title)
         try:
             description = soup.select_one(
                 'meta[property="og:description"]').get('content')
@@ -166,6 +165,9 @@ def bahaog(url, BAHAENUR, BAHARUNE, sac_bh):
             embed.set_thumbnail(url=thumbnail)
         except AttributeError:
             pass
+
+        # print(thumbnail)
+        # print(description)
         return embed
 
 

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.dcbot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- 替換為你的 Python 路徑，可用 `which python3` 查詢 -->
+        <string>/usr/local/bin/python3</string>
+        <!-- 替換為專案的實際路徑 -->
+        <string>/Users/你的使用者名稱/path/to/dc_public/bot.py</string>
+    </array>
+
+    <!-- 替換為專案目錄的實際路徑 -->
+    <key>WorkingDirectory</key>
+    <string>/Users/你的使用者名稱/path/to/dc_public</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/你的使用者名稱/path/to/dc_public/bot_output.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/你的使用者名稱/path/to/dc_public/bot_error.log</string>
+
+    <!-- 確保 PATH 包含 Python 與套件的位置 -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>
+
+<!--
+使用方式：
+1. 複製此檔案，去掉 .example 後綴，並填入你自己的路徑
+2. 放到 ~/Library/LaunchAgents/ 目錄下
+3. 執行以下指令載入服務：
+   launchctl load ~/Library/LaunchAgents/com.user.dcbot.plist
+4. 所有設定（token、API key 等）都放在專案目錄的 token.json 中，不需在 plist 設定
+-->

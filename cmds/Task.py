@@ -5,6 +5,7 @@ import pytz
 import discord
 from functions.ani_gamer import check_and_update
 from core.classes import Cog_Extension
+import config
 
 class Task(Cog_Extension):
     def __init__(self, *args, **kwargs):
@@ -13,13 +14,15 @@ class Task(Cog_Extension):
         async def time_tesk():
             await self.bot.wait_until_ready()
             while not self.bot.is_closed():
-                with open('json/channel.json','r',encoding='utf8') as f:
+                with open(config.DATA_DIR / 'channel.json','r',encoding='utf8') as f:
                     ch_data = json.load(f)
                 for server_id,channel_id in ch_data.items():
+                    # print(server_id,"test")
                     now_time=datetime.datetime.now().strftime("%H%M")
                     now_weekday=datetime.datetime.now().weekday()
                     now_sec=int(datetime.datetime.now().strftime("%S"))
-                    with open('json/sub.json','r',encoding='utf8') as f:
+                    # print(now_time)
+                    with open(config.DATA_DIR / 'sub.json','r',encoding='utf8') as f:
                         j_data = json.load(f)
                     if j_data == {}:
                         await asyncio.sleep(1)
@@ -29,9 +32,12 @@ class Task(Cog_Extension):
                             if now_time == j_data[str(server_id)][i]["update_time"] and now_weekday+1 ==  j_data[str(server_id)][i]["update_date"] and now_sec>1:
                                 try:
                                     response = check_and_update(i,server_id)
+                                    # print("執行爬蟲")
                                     if response == "already updated":
+                                        # print(j_data[str(server_id)][i]["name"])
                                         pass
                                     elif response == "fail to connect":
+                                        # print("what")
                                         pass
                                     elif response[0] == "n":
                                         pass
