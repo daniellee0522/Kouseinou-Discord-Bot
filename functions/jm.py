@@ -1,4 +1,3 @@
-import urllib.request as req
 from bs4 import BeautifulSoup
 import discord
 from curl_cffi import requests
@@ -7,17 +6,15 @@ import json
 import re
 import io
 import sys
-from io import BytesIO
+
+sys.path.append(r"./")
 from pathlib import Path
-import aiohttp
-from PIL import Image
-import hashlib
-import asyncio
-from discord.ext import tasks, commands
 import config
 
 sys.stdout = io.TextIOWrapper(
     sys.stdout.buffer, encoding='utf-8')
+
+
 
 _cookies_path = Path(__file__).parent.parent / 'data' / 'cookies.json'
 with open(_cookies_path, 'r', encoding='utf8') as _f:
@@ -48,6 +45,7 @@ def jm_crawl(url):
         })
         html = request.text
         print(html)
+        # Path('index.html').write_text(html, encoding='utf-8')
         soup = BeautifulSoup(html, 'lxml')
     else:
         urlServer = "http://localhost:8191/v1"
@@ -96,23 +94,14 @@ def jm_crawl(url):
         # page = 0
 
     # 取得頁數
-    anchors = soup.find_all('a')
+    pagecount_span = soup.find("span", class_="pagecount")
+    if pagecount_span:
+        text = pagecount_span.get_text()          # "頁數:52"
+        page_count = int(re.search(r"\d+", text).group())
+        print(f"頁數: {page_count}")              # 頁數: 52
+        print(type(page_count))        
 
-    if anchors != []:
-        url2 = f"https://18comic.vip/photo/{album_id}"
-        
-        html = requests.get(url2, headers=public_headers).text
-        soup2 = BeautifulSoup(html, 'html.parser')
-        options = soup2.find_all('option')
-        page = int(options[-1].get('value'))+1
-        
-    else:
-        tags = soup.find_all('div', class_='p-t-5 p-b-5')
-        for i,tag in enumerate(tags):
-            if "頁數" in tag.get_text(strip=True):
-                page = int(tag.get_text(strip=True).split("：")[-1])
-
-    return title, page, album_id 
+    return title, page_count, album_id 
 
 
 def jm_embed(url):
@@ -188,8 +177,6 @@ class NumberView3(View):
 
         await interaction.message.edit(embed=embed, view=self)
         await interaction.response.defer()
-        channel = interaction.client.get_channel(config.JM_LOG_CHANNEL_ID)
-        # await channel.send(f"{self.domain}{url}")
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="22")
     async def decrease(self, interaction: discord.Interaction, button: Button):
@@ -212,8 +199,6 @@ class NumberView3(View):
 
         await interaction.message.edit(embed=embed, view=self)
         await interaction.response.defer()
-        # channel = interaction.client.get_channel(config.JM_LOG_CHANNEL_ID)
-        # await channel.send(f"{self.domain}{url}")
 
     @discord.ui.button(label="-", style=discord.ButtonStyle.gray, disabled=True, custom_id="23")
     async def middle_button(self, interaction: discord.Interaction, button: Button):
@@ -241,8 +226,6 @@ class NumberView3(View):
 
         await interaction.message.edit(embed=embed, view=self)
         await interaction.response.defer()
-        channel = interaction.client.get_channel(config.JM_LOG_CHANNEL_ID)
-        # await channel.send(f"{self.domain}{url}")
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="25")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
@@ -262,8 +245,6 @@ class NumberView3(View):
 
         await interaction.message.edit(embed=embed, view=self)
         await interaction.response.defer()
-        channel = interaction.client.get_channel(config.JM_LOG_CHANNEL_ID)
-        # await channel.send(f"{self.domain}{url}")
         
 if __name__ == "__main__":
     url = "https://18comic.vip/album/622529"

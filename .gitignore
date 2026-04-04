@@ -23,6 +23,18 @@ data/nh.json
 # 日誌
 *.log
 
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+/json/
+
 # 備份檔案
 備份/
 bot copy.py

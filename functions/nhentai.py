@@ -1,21 +1,11 @@
-import urllib.request as req
 import bs4
-import urllib.error
 import discord
 from discord.ui import Button, View
 import re
 import json
-from io import TextIOWrapper
 import requests
 import random
-import logging
-from playwright.sync_api import sync_playwright
-from DrissionPage import WebPage, ChromiumOptions, ChromiumPage
-# import platform
-# from loguru import logger
-import os
 import aiohttp
-import asyncio
 from pathlib import Path
 import config
 
@@ -28,21 +18,25 @@ async def nhentai_crawl(session: aiohttp.ClientSession, sec5h, number="", cf_cle
         "Referer": "https://nhentai.net/"
     }
 
-    async with session.get(url, headers=headers) as response:
-        webdata = await response.text()
-        
-        # 判定是否被攔截：狀態碼不對 OR 包含 Cloudflare 特徵 OR 找不到關鍵 JSON
-        is_blocked = (
-            response.status != 200 or 
-            "cf-browser-verification" in webdata or 
-            "Just a moment..." in webdata or
-            re.search(r'JSON.parse.{2}({.+})', webdata) is None # 重要：預先檢查正则
-        )
+    try:
+        webdata = await sec5h.request(url)
+    except Exception as e:
+        async with session.get(url, headers=headers) as response:
+            webdata = await response.text()
+            
+            # 判定是否被攔截：狀態碼不對 OR 包含 Cloudflare 特徵 OR 找不到關鍵 JSON
+            is_blocked = (
+                response.status != 200 or 
+                "cf-browser-verification" in webdata or 
+                "Just a moment..." in webdata or
+                re.search(r'JSON.parse.{2}({.+})', webdata) is None # 重要：預先檢查正则
+            )
 
-        if is_blocked:
-            print(f"[Debug] 偵測到攔截，請求 sec5h Docker...")
-            # 這裡才會真正觸發 Docker 請求
-            webdata = await sec5h.request(url)
+            if is_blocked:
+                print(f"[Debug] 偵測到攔截，請求 sec5h Docker...")
+                # 這裡才會真正觸發 Docker 請求
+                webdata = await sec5h.request(url)
+        
     
     # 接下來才進行解析，確保 webdata 是正確的 HTML
     soup = bs4.BeautifulSoup(webdata, "html.parser")
@@ -112,7 +106,7 @@ async def nhentai_crawl(session: aiohttp.ClientSession, sec5h, number="", cf_cle
         result.append(item_dict)
 
     # link_lst2 = [match_strip(link) for link in link_lst]
-    save_image_url(number, data_src_list, media_id)
+    # save_image_url(number, data_src_list, media_id)
     return title, thumbnail, result, link, data_src_list
 
 def remove_query_string(url):
@@ -138,17 +132,17 @@ def add_url(digit: str):
     return url
 
 
-async def test_embed(session: aiohttp.ClientSession, sec5h, digit, cf_clearance, csrftoken):
+async def test_embed(session: aiohttp.ClientSession, sec5h, digit, cf_clearance, csrftoken, page=0):
     url = add_url(digit)
     try:
-        title, thumbnail, result, link, _ = await nhentai_crawl(session=session, sec5h=sec5h, number=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
+        title, thumbnail, result, link, link_list = await nhentai_crawl(session=session, sec5h=sec5h, number=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
     except:
         error_code = await nhentai_crawl(session=session, sec5h=sec5h, number=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
         return error_code
     embed = discord.Embed(title=title, url=url)
     embed.set_thumbnail(url=thumbnail)
     embed.set_image(
-        url=link)
+        url=link_list[page] if 0 <= page < len(link_list) else link)
     # print(f"https://i3.nhentai.net/galleries/{digit}/1.jpg")
     for item in result:
         if "Artists" in item.keys():
@@ -221,10 +215,12 @@ def match_strip(link):
 
 
 class NumberView(View):
-    def __init__(self,embed: discord.Embed = None):
+    def __init__(self,embed: discord.Embed = None, session: aiohttp.ClientSession = None, sec5h = None):
         super().__init__(timeout=None)
         # self.message = message
         self.number = 1
+        self.session = session
+        self.sec5h = sec5h
 
         if embed != None:
             embed_dict = {i.name: i.value for i in embed.fields}
@@ -246,17 +242,17 @@ class NumberView(View):
         title = embed.url
         number = extract_numbers(title)[0]
 
-        # _,_,_,_,link_lst = nhentai_crawl(number,"","")
-        link_lst = get_image_url(number)
+        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
+        # link_lst = get_image_url(number)
         # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
 
-        url = link_lst[0]
+        # url = link_lst[0]
 
-        embed.set_image(url=url)
+        # embed.set_image(url=url)
 
         self.middle_button.label = str(self.number)+"/" + num
 
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(embed=new_embed, view=self)
         # await interaction.response.defer()
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="1")
@@ -270,8 +266,8 @@ class NumberView(View):
         title = embed.url
         number = extract_numbers(title)[0]
 
-        # _,_,_,_,link_lst = nhentai_crawl(number,"","")
-        link_lst = get_image_url(number)
+        
+        # link_lst = get_image_url(number)
         # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
 
         pattern = r"/(\d+)\.(?:webp|jpg|jpeg|png|gif|bmp)$"
@@ -279,13 +275,14 @@ class NumberView(View):
         if self.number > 1:
             self.number -= 1
 
-        url = link_lst[self.number-1]
+        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
 
-        embed.set_image(url=url)
+        # url = link_lst[self.number-1]
+        # embed.set_image(url=url)
 
         self.middle_button.label = str(self.number)+"/" + num
 
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(embed=new_embed, view=self)
         # await interaction.response.defer()
 
     @discord.ui.button(label="-", style=discord.ButtonStyle.gray, disabled=True, custom_id="2")
@@ -308,8 +305,9 @@ class NumberView(View):
         title = embed.url
         number = extract_numbers(title)[0]
 
-        # _,_,_,_,link_lst = nhentai_crawl(number,"","")
-        link_lst = get_image_url(number)
+        
+        # _,_,_,_,link_lst = await nhentai_crawl(session=self.session, sec5h=self.sec5h, number=number, cf_clearance="", csrftoken="")
+        # link_lst = get_image_url(number)
         # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
 
         #print(url)
@@ -319,15 +317,16 @@ class NumberView(View):
         if self.number + 1 <= int(num):
             self.number += 1
 
-        url = link_lst[self.number-1]
+        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
+        # url = link_lst[self.number-1]
 
         self.middle_button.label = str(self.number) + "/" + num
 
-        embed.set_image(url=url)
+        # embed.set_image(url=url)
 
         # logging.info(f"url: {url}")
 
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(embed=new_embed, view=self)
         # await interaction.response.defer()
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="4")
@@ -341,18 +340,20 @@ class NumberView(View):
         title = embed.url
         number = extract_numbers(title)[0]
 
-        # _,_,_,_,link_lst = nhentai_crawl(number,"","")
-        link_lst = get_image_url(number)
+        
+        # _,_,_,_,link_lst = await nhentai_crawl(session=self.session, sec5h=self.sec5h, number=number, cf_clearance="", csrftoken="")
+        # link_lst = get_image_url(number)
         # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
 
         self.number = int(num)
         self.middle_button.label = str(self.number)+"/"+num
 
-        url = link_lst[self.number-1]
+        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
 
-        embed.set_image(url=url)
+        # url = link_lst[self.number-1]
+        # embed.set_image(url=url)
 
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(embed=new_embed, view=self)
         # await interaction.response.defer()
 
 if __name__ == "__main__":

@@ -97,30 +97,8 @@ class 通用指令(Cog_Extension):
             embeds.append(embed)
 
         if embeds:
-            await interaction.followup.send(embeds=embeds)
+            await interaction.followup.send(embeds=embeds)    
 
-    # 定義一個 Slash Command，並使用 Autocomplete
-    @app_commands.command(name="庫存")
-    async def search(self, interaction: discord.Interaction, lst: str):
-        await interaction.response.send_message(f"[.]({config.MEDIA_BASE_URL}/{lst})")
-
-    # 定義 Autocomplete 回調
-    @search.autocomplete("lst")
-    async def query_autocomplete(self, interaction: discord.Interaction, current: str):
-
-        input_path = Path(config.VIDEO_PATH).resolve()
-
-        options = list(input_path.glob("*.mp4"))
-
-        for i,file in enumerate(options):
-            options[i] = file.name
-
-        # 根據當前輸入進行篩選，實時更新選項
-        filtered = [option for option in options if current.lower() in option.lower()]
-
-        # 返回最多 25 個選項（Discord 限制）
-        return [discord.app_commands.Choice(name=option, value=option) for option in filtered[:25]]
-    
 
     @app_commands.command(name="歡迎訊息", description="設定歡迎訊息(會在設定該指令的地方發出)")
     @app_commands.describe(arg="內文")
