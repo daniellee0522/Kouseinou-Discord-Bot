@@ -89,25 +89,31 @@ async def nhentai_crawl(session: aiohttp.ClientSession, sec5h, number="", cf_cle
     res = soup.find_all(
         'div', {"class": "tag-container field-name"})
 
-    result = []
-    for item in res:
-        item_dict = {}
-        tags = []
-        header = item.contents[0].strip().rstrip(':')
+    result_data = {}
+    tags_section = soup.find('section', id='tags')
 
-        for tag in item.find_all('a', class_='tag'):
-            tag_name = tag.find('span', class_='name').text
-            tags.append(tag_name)
-        if not tags:  # If there are no tags (e.g., for 'Uploaded')
-            tags = [item.find('time').text] if item.find(
-                'time') else []
-
-        item_dict[header] = tags
-        result.append(item_dict)
+    if tags_section:
+        containers = tags_section.find_all('div', class_=lambda x: x and x.startswith('tag-container'))
+        
+        for container in containers:
+            text_content = container.get_text(strip=True)
+            if ":" in text_content:
+                category_name = text_content.split(":")[0].strip()
+                tag_names = []
+                name_spans = container.find_all('span', class_=lambda x: x and x.startswith('name'))
+                
+                for span in name_spans:
+                    tag_names.append(span.get_text(strip=True))
+                
+                if not tag_names:
+                    value_text = text_content.split(":", 1)[1].strip()
+                    result_data[category_name] = value_text
+                else:
+                    result_data[category_name] = tag_names
 
     # link_lst2 = [match_strip(link) for link in link_lst]
     # save_image_url(number, data_src_list, media_id)
-    return title, thumbnail, result, link, data_src_list
+    return title, thumbnail, result_data, link, data_src_list
 
 def remove_query_string(url):
     # 使用正則表達式移除問號後面的部分
@@ -144,31 +150,31 @@ async def test_embed(session: aiohttp.ClientSession, sec5h, digit, cf_clearance,
     embed.set_image(
         url=link_list[page] if 0 <= page < len(link_list) else link)
     # print(f"https://i3.nhentai.net/galleries/{digit}/1.jpg")
-    for item in result:
-        if "Artists" in item.keys():
-            # print(item["Artists"])
+    for key, value in result.items():
+        if key == "Artists":
+            # print(value)
             str_ = ""
-            for i, author in enumerate(item["Artists"]):
+            for i, author in enumerate(value):
                 # print(author)
-                if i+1 != len(item["Artists"]):
+                if i+1 != len(value):
                     author2 = author.replace(' |', '')
                     str_ += f"[{author}](https://nhentai.net/artist/{author2.replace(' ','-')})"+","
                 else:
                     author2 = author.replace(' |', '')
                     str_ += f"[{author}](https://nhentai.net/artist/{author2.replace(' ','-')})"
             embed.add_field(name="作者", value=str_)
-        if "Tags" in item.keys():
-            # print(item["Tags"])
+        if key == "Tags":
+            # print(value)
             str_ = ""
-            for i, tag in enumerate(item["Tags"]):
-                if i+1 != len(item["Tags"]):
+            for i, tag in enumerate(value):
+                if i+1 != len(value):
                     str_ += f"{tag}"+","
                 else:
                     str_ += f"{tag}"
             embed.add_field(name="標籤", value=str_)
-        if "Pages" in item.keys():
+        if key == "Pages":
             # print("pages")
-            embed.add_field(name="頁數", value=item["Pages"][0])
+            embed.add_field(name="頁數", value=value[0])
     embed.set_author(
         name="nhentai", icon_url="https://i.imgur.com/LslnmKV.png")
     return embed
@@ -356,9 +362,60 @@ class NumberView(View):
         await interaction.message.edit(embed=new_embed, view=self)
         # await interaction.response.defer()
 
+
+async def main():
+    sec5h = Sec5sh()
+    number = "549984"
+    url = "https://nhentai.net/g/650154/"
+    webdata = await sec5h.request(url)
+    soup = bs4.BeautifulSoup(webdata, "html.parser")
+    result_data = {}
+    tags_section = soup.find('section', id='tags')
+
+    if tags_section:
+        # 2. 找出裡面所有的標籤容器（每一個 div 代表一個分類，如 Parodies、Tags）
+        # 這裡使用 class^="tag-container" 代表「只要 class 開頭是 tag-container 即可」
+        
+        containers = tags_section.find_all('div', class_=lambda x: x and x.startswith('tag-container'))
+        
+        for container in containers:
+            # 取得這一行的文字內容（例如: "Parodies: original 140.5k"）
+            text_content = container.get_text(strip=True)
+            
+            # 用冒號 ":" 切割，前面就是分類名稱（如 Parodies、Tags、Pages 等）
+            if ":" in text_content:
+                category_name = text_content.split(":")[0].strip()
+                
+                # --- 情況 A：如果是普通的標籤分類（裡面有很多 tagchip） ---
+                # 我們要精準抓取 <span class="name"> 裡面的純標籤文字，把後面的數量（140.5k）剃除
+                tag_names = []
+                # 尋找所有 class 開頭是 name 的 span 標籤
+                name_spans = container.find_all('span', class_=lambda x: x and x.startswith('name'))
+                
+                for span in name_spans:
+                    tag_names.append(span.get_text(strip=True))
+                
+                # --- 情況 B：如果是頁數（Pages）或時間（Uploaded）等特殊欄位 ---
+                # 如果發現找不到任何 tagchip 的 name，代表它是單純的文字或數字
+                if not tag_names:
+                    # 取得冒號後面的剩餘所有文字作為值
+                    value_text = text_content.split(":", 1)[1].strip()
+                    result_data[category_name] = value_text
+                else:
+                    # 正常將分類與解析好的標籤清單存入字典
+                    result_data[category_name] = tag_names
+    print(result_data)
+
 if __name__ == "__main__":
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
-    }   
-    response = requests.get("https://nhentai.net/g/123456/", headers=headers)
-    print(response.text)
+    # Create the session inside the running event loop
+    import os
+    import sys
+
+    # 自動取得 nhentai.py 所在的資料夾路徑，並加入 Python 搜尋清單中
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+    from sec5sh import Sec5sh
+
+    import asyncio
+    asyncio.run(main())
