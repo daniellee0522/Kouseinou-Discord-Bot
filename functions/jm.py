@@ -124,6 +124,14 @@ def jm_embed(url):
 
     return embed
 
+def extract_page_number(url: str) -> int:
+    from urllib.parse import unquote
+    url_decoded = unquote(url)
+    match = re.search(r'/(\d{5})\.webp', url_decoded)
+    if match:
+        return int(match.group(1))
+    return 1
+
 
 def extract_number_from_url(url):
     pattern = r'/(\d+)(?:/|$)'
@@ -144,61 +152,45 @@ def fillnum(num):
     return num
 
 
-class NumberView3(View):
-    def __init__(self, embed:discord.Embed=None):
+class NumberView3(discord.ui.View):
+    def __init__(self, embed: discord.Embed = None):
         super().__init__(timeout=None)
-        # self.message = message
         self.number = 1
         self.domain = f"{config.PIC_PROXY_URL}/transform?url="
-
-        if embed != None:
+        if embed is not None:
             embed_dict = {i.name: i.value for i in embed.fields}
             num = embed_dict["頁數"]
-            
-            # 設置中間按鈕的標籤
             self.middle_button.label = f"{self.number}/{num}"
 
     @discord.ui.button(label='<<', style=discord.ButtonStyle.gray, custom_id="21")
     async def decreasetostart(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
         self.number = 1
-        page_num = fillnum(self.number)
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
+        num = embed_dict["頁數"]
         title = embed.url
         id = extract_number_from_url(title)
-        num = embed_dict["頁數"]
-        url = f"https://cdn-msp.18comic.org/media/photos/{id}/00001.webp"
-        
-
-
-        embed.set_image(url= self.domain + url)
-
-        self.middle_button.label = str(self.number)+"/" + num
-
+        url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
+        embed.set_image(url=self.domain + url)
+        self.middle_button.label = f"{self.number}/{num}"
         await interaction.message.edit(embed=embed, view=self)
-        await interaction.response.defer()
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="22")
     async def decrease(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
         title = embed.url
         id = extract_number_from_url(title)
-
-        self.number = int(url[-10:-5])
+        self.number = extract_page_number(embed.image.url)
         if self.number > 1:
             self.number -= 1
-
         url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-
-        embed.set_image(url=self.domain+url)
-
-        self.middle_button.label = str(self.number)+"/" + num
-
+        embed.set_image(url=self.domain + url)
+        self.middle_button.label = f"{self.number}/{num}"
         await interaction.message.edit(embed=embed, view=self)
-        await interaction.response.defer()
 
     @discord.ui.button(label="-", style=discord.ButtonStyle.gray, disabled=True, custom_id="23")
     async def middle_button(self, interaction: discord.Interaction, button: Button):
@@ -206,45 +198,33 @@ class NumberView3(View):
 
     @discord.ui.button(label='>', style=discord.ButtonStyle.gray, custom_id="24")
     async def increase(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
         title = embed.url
         id = extract_number_from_url(title)
-
-        self.number = int(url[-10:-5])
-
+        self.number = extract_page_number(embed.image.url)
         if self.number + 1 <= int(num):
             self.number += 1
-
         url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-
-        self.middle_button.label = str(self.number) + "/" + num
-
-        embed.set_image(url=self.domain+url)
-
+        embed.set_image(url=self.domain + url)
+        self.middle_button.label = f"{self.number}/{num}"
         await interaction.message.edit(embed=embed, view=self)
-        await interaction.response.defer()
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="25")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer()
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
         title = embed.url
         id = extract_number_from_url(title)
-
         self.number = int(num)
-        self.middle_button.label = str(self.number)+"/"+num
-
         url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-
-        embed.set_image(url=self.domain+url)
-
+        embed.set_image(url=self.domain + url)
+        self.middle_button.label = f"{self.number}/{num}"
         await interaction.message.edit(embed=embed, view=self)
-        await interaction.response.defer()
         
 if __name__ == "__main__":
     url = "https://18comic.vip/album/622529"

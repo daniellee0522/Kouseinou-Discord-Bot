@@ -153,7 +153,8 @@ class Events(commands.Cog):
         embed = await asyncio.to_thread(jm_embed, url)
         view = NumberView3(embed=embed)
         await message.channel.send(embed=embed, view=view)
-        await message.edit(suppress=True) # 隱藏原網址預覽
+        await message.edit(suppress=True)
+
 
     async def handler_wnacg(self, message, url, match):
         if is_embed_ban(server_id=message.channel.id, arg="wn"):
