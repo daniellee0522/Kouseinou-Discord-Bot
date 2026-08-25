@@ -23,8 +23,6 @@ Any suggestions or issues can be asked here.
 ## Bot invite link
 [https://discord.com/discovery/applications/1243841697637601310](https://discord.com/discovery/applications/1243841697637601310)
 
-The bot is currently hit the limit of 100 servers, I will try to apply the approval for the privilege intents in some day.
-
 ## Policies
 - [Terms of services](https://github.com/daniellee0522/Kouseinou-Discord-Bot/blob/main/docs/Terms_of_service.md)
 - [Private policy](https://github.com/daniellee0522/Kouseinou-Discord-Bot/blob/main/docs/Privacy_policy.md)
