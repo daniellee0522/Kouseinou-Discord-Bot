@@ -1,3 +1,4 @@
+import asyncio
 import bs4
 import discord
 from discord.ui import Button, View
@@ -116,7 +117,6 @@ async def nhentai_crawl(session: aiohttp.ClientSession, sec5h, number="", cf_cle
     return title, thumbnail, result_data, link, data_src_list
 
 def remove_query_string(url):
-    # 使用正則表達式移除問號後面的部分
     if config.NH_PROXY_URL and config.NH_PROXY_URL in url:
         url = url.replace(f"{config.NH_PROXY_URL}?img=", "")
     return re.sub(r'\?[\d]+$', '', url)
@@ -227,39 +227,47 @@ class NumberView(View):
         self.number = 1
         self.session = session
         self.sec5h = sec5h
+        self.lock = asyncio.Lock()
+        # 舊訊息共用 persistent View，每次操作都從該訊息讀取頁碼。
 
         if embed != None:
             embed_dict = {i.name: i.value for i in embed.fields}
             num = embed_dict["頁數"]
-            
+
             # 設置中間按鈕的標籤
             self.middle_button.label = f"{self.number}/{num}"
             self.middle_button.disabled = True
-            
+
+    def _sync_number(self, embed: discord.Embed):
+        pattern = r"/(\d+)\.(?:webp|jpg|jpeg|png|gif|bmp)$"
+        match = re.search(pattern, embed.image.url)
+        self.number = int(match.group(1)) if match else 1
+
+    async def _edit_twice(self, interaction: discord.Interaction, embed: discord.Embed):
+        # Discord 對「編輯訊息換上全新圖片網址」常常第一次抓不到圖(見
+        # discord-api-docs#6540），要再編輯一次同樣內容才會正常顯示，
+        # 這裡直接補一次相同的 edit 來規避。
+        await interaction.message.edit(embed=embed, view=self)
+        await asyncio.sleep(0.5)
+        await interaction.message.edit(embed=embed, view=self)
+
     @discord.ui.button(label='<<', style=discord.ButtonStyle.gray, custom_id="0")
     async def decreasetostart(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer()
-        self.number = 1
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
-        # url = remove_query_string(url)
         title = embed.url
         number = extract_numbers(title)[0]
 
-        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-        # link_lst = get_image_url(number)
-        # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
+        async with self.lock:
+            self.number = 1
 
-        # url = link_lst[0]
+            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
 
-        # embed.set_image(url=url)
+            self.middle_button.label = str(self.number)+"/" + num
 
-        self.middle_button.label = str(self.number)+"/" + num
-
-        await interaction.message.edit(embed=new_embed, view=self)
-        # await interaction.response.defer()
+            await self._edit_twice(interaction, new_embed)
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="1")
     async def decrease(self, interaction: discord.Interaction, button: Button):
@@ -267,29 +275,19 @@ class NumberView(View):
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
-        # url = remove_query_string(url)
         title = embed.url
         number = extract_numbers(title)[0]
 
-        
-        # link_lst = get_image_url(number)
-        # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
+        async with self.lock:
+            self._sync_number(embed)
+            if self.number > 1:
+                self.number -= 1
 
-        pattern = r"/(\d+)\.(?:webp|jpg|jpeg|png|gif|bmp)$"
-        self.number = int(re.search(pattern, url).group(1))
-        if self.number > 1:
-            self.number -= 1
+            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
 
-        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
+            self.middle_button.label = str(self.number)+"/" + num
 
-        # url = link_lst[self.number-1]
-        # embed.set_image(url=url)
-
-        self.middle_button.label = str(self.number)+"/" + num
-
-        await interaction.message.edit(embed=new_embed, view=self)
-        # await interaction.response.defer()
+            await self._edit_twice(interaction, new_embed)
 
     @discord.ui.button(label="-", style=discord.ButtonStyle.gray, disabled=True, custom_id="2")
     async def middle_button(self, interaction: discord.Interaction, button: Button):
@@ -306,34 +304,19 @@ class NumberView(View):
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
-        # url = remove_query_string(url)
         title = embed.url
         number = extract_numbers(title)[0]
 
-        
-        # _,_,_,_,link_lst = await nhentai_crawl(session=self.session, sec5h=self.sec5h, number=number, cf_clearance="", csrftoken="")
-        # link_lst = get_image_url(number)
-        # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
+        async with self.lock:
+            self._sync_number(embed)
+            if self.number + 1 <= int(num):
+                self.number += 1
 
-        #print(url)
-        pattern = r"/(\d+)\.(?:webp|jpg|jpeg|png|gif|bmp)$"
-        self.number = int(re.search(pattern, url).group(1))
+            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
 
-        if self.number + 1 <= int(num):
-            self.number += 1
+            self.middle_button.label = str(self.number) + "/" + num
 
-        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-        # url = link_lst[self.number-1]
-
-        self.middle_button.label = str(self.number) + "/" + num
-
-        # embed.set_image(url=url)
-
-        # logging.info(f"url: {url}")
-
-        await interaction.message.edit(embed=new_embed, view=self)
-        # await interaction.response.defer()
+            await self._edit_twice(interaction, new_embed)
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="4")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
@@ -341,26 +324,16 @@ class NumberView(View):
         embed = interaction.message.embeds[0]
         embed_dict = {i.name: i.value for i in embed.fields}
         num = embed_dict["頁數"]
-        url = embed.image.url
-        # url = remove_query_string(url)
         title = embed.url
         number = extract_numbers(title)[0]
 
-        
-        # _,_,_,_,link_lst = await nhentai_crawl(session=self.session, sec5h=self.sec5h, number=number, cf_clearance="", csrftoken="")
-        # link_lst = get_image_url(number)
-        # link_lst = [match_unstrip(number, page, link) for page,link in enumerate(link_lst)]
+        async with self.lock:
+            self.number = int(num)
+            self.middle_button.label = str(self.number)+"/"+num
 
-        self.number = int(num)
-        self.middle_button.label = str(self.number)+"/"+num
+            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
 
-        new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-
-        # url = link_lst[self.number-1]
-        # embed.set_image(url=url)
-
-        await interaction.message.edit(embed=new_embed, view=self)
-        # await interaction.response.defer()
+            await self._edit_twice(interaction, new_embed)
 
 
 async def main():

@@ -1,7 +1,6 @@
 import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
-import json
 
 class Sec5sh:
     def __init__(self):

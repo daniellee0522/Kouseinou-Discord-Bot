@@ -19,14 +19,15 @@ class Embed開關指令(Cog_Extension):
             Choice(name="nhentai", value="nh"),
             Choice(name="wnacg", value="wn"),
             Choice(name="禁漫天堂", value="jm"),
-            Choice(name="xvideo", value="andy")
+            Choice(name="xvideo", value="andy"),
+            Choice(name="facebook", value="fb"),
         ]
     )
     async def 場外開關(self, interaction: discord.Interaction, website: Choice[str]):
         arg = website.value
         server_id = interaction.guild_id
         if server_id == None:
-            interaction.response.send_message("Not available")
+            await interaction.response.send_message("Not available")
             return
         text = change_permission(server_id=server_id, arg=arg)
         await interaction.response.send_message(content=text)

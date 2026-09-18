@@ -3,7 +3,7 @@ from discord import app_commands, Interaction, ui, TextStyle, Message, Embed
 import re
 from core.classes import Cog_Extension
 from functions.wnacg import find_img_new, NumberView2
-from functions.nhentai import get_image_url, extract_numbers, NumberView
+from functions.nhentai import nhentai_crawl, extract_numbers, NumberView
 from functions.jm import extract_number_from_url, fillnum, NumberView3
 
 
@@ -17,8 +17,9 @@ class JumpPageModal(ui.Modal, title="跳轉頁數"):
         max_length=5,
     )
 
-    def __init__(self, target_message: Message):
+    def __init__(self, bot, target_message: Message):
         super().__init__()
+        self.bot = bot
         self.target_message = target_message
 
     async def on_submit(self, interaction: Interaction):
@@ -48,30 +49,24 @@ class JumpPageModal(ui.Modal, title="跳轉頁數"):
                 f"頁數需介於 1 到 {page} 之間。", ephemeral=True
             )
 
+        await interaction.response.defer(ephemeral=True)
+
         # --- 3. 更新 embed 圖片 ---
         img = None
         if embed.author.name == "wnacg":
             digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
-            test = False
-            if "TRUE" in embed.image.url.split("?")[-1]:
-                match1 = re.search(r'img(\d+)\.qy0\.ru', embed.image.url)
-                test = True
-                page_num = embed.image.url.split("?")[-2]
-            else:
-                page_num = embed.image.url.split("?")[-1]
 
-            img = find_img_new(digit=digit, page=page, page_num=target_page, test=test) + "?TRUE"
-            if test:
-                img = re.sub(r"img(\d+)\.qy0\.ru", match1.group(0), img)
-            view = NumberView2()
+            img = await find_img_new(self.bot.session, digit=digit, page=page, page_num=target_page)
+            embed.set_footer(text=str(target_page))
+            view = NumberView2(session=self.bot.session)
             view.middle_button.label = f"{target_page}/{page}"
 
         elif embed.author.name == "nhentai":
             title = embed.url
             number = extract_numbers(title)[0]
-            link_lst = get_image_url(number)
+            _, _, _, _, link_lst = await nhentai_crawl(self.bot.session, self.bot.missav_crawl, number)
             img = link_lst[target_page - 1]
-            view = NumberView()
+            view = NumberView(session=self.bot.session, sec5h=self.bot.missav_crawl)
             view.middle_button.label = f"{target_page}/{page}"
         
         elif embed.author.name == "禁漫天堂":
@@ -83,7 +78,7 @@ class JumpPageModal(ui.Modal, title="跳轉頁數"):
 
 
         else:
-            return await interaction.response.send_message(
+            return await interaction.followup.send(
                 "不支援此 embed 的跳轉頁數功能。", ephemeral=True
             )
 
@@ -91,7 +86,7 @@ class JumpPageModal(ui.Modal, title="跳轉頁數"):
             embed.set_image(url=img)
             await self.target_message.edit(embed=embed, view=view)
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"已跳轉到第 {target_page} 頁。", ephemeral=True
         )
 
@@ -99,28 +94,23 @@ class JumpPageModal(ui.Modal, title="跳轉頁數"):
 # ===== Cog：右鍵選單 =====
 class JumpPage(Cog_Extension):
     def __init__(self, bot):
-        self.bot = bot
+        super().__init__(bot)
 
-        # --- 動態註冊 context menu ---
         @app_commands.context_menu(name="跳轉頁數")
         async def jump_page_menu(interaction: Interaction, message: Message):
-            # 1. 確認是你的機器人發出的訊息
             if message.author.id != interaction.client.user.id:
                 return await interaction.response.send_message(
                     "只能操作機器人自己的訊息。", ephemeral=True
                 )
-
-            # 2. 必須有 embed
             if not message.embeds:
                 return await interaction.response.send_message(
                     "這個訊息沒有 embed。", ephemeral=True
                 )
-
-            # 3. 彈出 Modal
-            modal = JumpPageModal(message)
+            modal = JumpPageModal(bot, message)
             await interaction.response.send_modal(modal)
 
-        self.bot.tree.add_command(jump_page_menu)
+        self.jump_page_menu = jump_page_menu
+        bot.tree.add_command(jump_page_menu)
 
 
 async def setup(bot):

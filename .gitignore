@@ -43,3 +43,7 @@ bot copy.py
 ._*
 .DS_Store
 __MACOSX/
+
+data/fbcookies.json
+
+data/retry_queue.json

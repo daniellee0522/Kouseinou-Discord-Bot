@@ -5,8 +5,10 @@ from pathlib import Path
 from functions.nhentai import test_embed, NumberView
 from functions.wnacg import create_wnacg_embed, NumberView2
 from functions.jm import jm_embed, NumberView3
-from functions.supav import supjav_crawl
-from bs4 import BeautifulSoup
+from functions.supav import supjav_crawl, supjav_search_embed
+from functions.missav_func import fetch_missav_embed, missav_fallback_embed
+from functions.jable import jable_embed
+import asyncio
 import discord
 import json
 import config
@@ -42,26 +44,78 @@ class HentaiEmbedCmd(commands.Cog):
         await interaction.followup.send(embed=embed, view=view)
 
 
-    @app_commands.command(name="missav", description="回傳missav embed")
+    @app_commands.command(name="av番號查詢", description="查詢av番號，優先順序: missav > jable > supjav")
     @app_commands.describe(digit="番號")
     async def missav(self, interaction: discord.Interaction, digit: str):
         await interaction.response.defer()
-        link=f"https://missav.ai/{digit}"
+
+        # 三個來源一開始就同時起飛，不用等 missav 爬完才決定要不要查 jable/supjav；
+        # 但 missav 有結果的話就不用再等 jable/supjav（它們通常比 missav 慢很多），
+        # 不然明明 missav 秒回也會被拖著一起等，等於變得更慢。
+        # 優先權 missav > jable > supjav (後兩者由 missav_fallback_embed 內部處理)
+        missav_task = asyncio.create_task(fetch_missav_embed(self.bot.missav_crawl, digit))
+        fallback_task = asyncio.create_task(missav_fallback_embed(self.bot.jable_crawl, digit))
+
         try:
-            response = await self.bot.missav_crawl.request(link)
-            soup = BeautifulSoup(response, 'html.parser')
-            description = soup.find('meta', attrs={'name': 'description'})
-            title = soup.find('meta', attrs={'property': 'og:title'})
-            image = soup.find('meta', attrs={'property': 'og:image'})
-            embed = discord.Embed(title=title['content'], url=link)
-            if image:
-                embed.set_image(url=image['content'])
-            if description:
-                embed.description = description['content']
-            embed.set_author(name="MissAV")
+            embed = await missav_task
+            missav_failed = False
+        except Exception:
+            embed = None
+            missav_failed = True
+
+        if embed is None:
+            try:
+                embed = await fallback_task
+            except Exception:
+                embed = None
+        else:
+            # missav 已經有答案，jable/supjav 的結果用不到了，讓它在背景跑完就好，
+            # 不要因為沒人 await 例外而跳警告
+            fallback_task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+        if embed:
             await interaction.followup.send(embed=embed)
-        except:
-            await interaction.followup.send("找不到")
+        elif missav_failed:
+            await interaction.followup.send("目前無法取得資料，請稍後再試。")
+        else:
+            await interaction.followup.send("找不到這個番號（MissAV、Jable、Supjav 都沒有）")
+
+    @app_commands.command(name="missav", description="回傳missav embed")
+    @app_commands.describe(digit="番號")
+    async def missav_only(self, interaction: discord.Interaction, digit: str):
+        await interaction.response.defer()
+        try:
+            embed = await fetch_missav_embed(self.bot.missav_crawl, digit)
+        except Exception:
+            embed = None
+        if embed is None:
+            await interaction.followup.send("找不到相關影片或存取遭拒")
+            return
+        await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="jable", description="回傳jable embed")
+    @app_commands.describe(digit="番號")
+    async def jable(self, interaction: discord.Interaction, digit: str):
+        await interaction.response.defer()
+        embed = await jable_embed(self.bot.jable_crawl, digit)
+        if embed is None:
+            await interaction.followup.send("找不到相關影片或存取遭拒")
+            return
+        await interaction.followup.send(embed=embed)
+
+
+    @app_commands.command(name="supjav", description="回傳supjav embed")
+    @app_commands.describe(digit="番號")
+    async def supjav(self, interaction: discord.Interaction, digit: str):
+        await interaction.response.defer()
+        try:
+            embed = await supjav_search_embed(digit)
+        except Exception:
+            embed = None
+        if embed is None:
+            await interaction.followup.send("找不到相關影片或存取遭拒")
+            return
+        await interaction.followup.send(embed=embed)
 
 
     @app_commands.command(name="jm", description="回傳禁漫天堂 embed")
@@ -93,7 +147,7 @@ class HentaiEmbedCmd(commands.Cog):
         elif embed == 403:
             await interaction.response.send_message("存取遭拒")
             return
-        view = NumberView(embed)
+        view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
         await interaction.response.send_message(embed=embed, view=view)
 
 async def setup(bot):

@@ -10,12 +10,14 @@ from functions.embed_permission import is_embed_ban
 from functions.slot import Gacha, check_lock, block_check
 from functions.jm import jm_embed, NumberView3
 from functions.xvideo import xvideo_embed
-from functions.wnacg import create_wnacg_embed, NumberView2
+from functions.wnacg import create_wnacg_embed, resolve_wnacg_view, NumberView2
 from functions.nhentai import test_embed, NumberView
 from functions.pornhub import get_pornhub_embed
 from functions.supav import chrome_crawl, supjav_crawl
+from functions.brand import MISSAV, JABLE
 from functions.baha import extract_urls, bahaog, reload_baha_tk, Conf
 from functions.gacha import process_gacha_data
+from functions.facebook_fetch_new import get_facebook_data
 import aiohttp
 import config
 
@@ -27,8 +29,9 @@ class Events(commands.Cog):
         self.bot = bot
         # 定義網址與對應處理函數的映射表 (範例)
         self.url_patterns = {
-            r'18comic\.(?:vip|org)/album/(\d+)[^\s]*': self.handler_jm,
-            r'wnacg(\.com|\.ru)/photos-(?:index|slide|slist|index-page|view)(?:-\d+)?-(?:aid|id)-(\d+)[^\s]*': self.handler_wnacg,
+            r'18comic\.(?:vip|org)/(?:album|photo)/(\d+)[^\s]*': self.handler_jm,
+            r'wnacg(\.com|\.ru)/photos-view-id-(\d+)[^\s]*': self.handler_wnacg_view,
+            r'wnacg(\.com|\.ru)/photos-(?:index|slide|slist|index-page)(?:-\d+)?-aid-(\d+)[^\s]*': self.handler_wnacg,
             r'nhentai\.net/g/(\d+)[^\s]*': self.handler_nhentai,
             r'missav\.(ai|ws)/(\w+)[^\s]*': self.handler_missav,
             r'jable\.tv/videos/([\w-]+)[^\s]*': self.handler_jable,
@@ -36,6 +39,7 @@ class Events(commands.Cog):
             r'pornhub\.com/view_video\.php\?viewkey=(\w+)': self.handler_pornhub,
             r"supjav.com\/[0-9]\+.html": self.handler_supjav,
             r'forum\.gamer\.com\.tw/.*?bsn=(\d+)[^\s]*': self.handler_baha,
+            r'(facebook\.com|fb\.watch)[^\s]*': self.handler_facebook
         }
         self.keywords_match = {
             r"-1200": self.keyword_handler_gacha
@@ -144,12 +148,19 @@ class Events(commands.Cog):
         await self.bot.process_commands(message)
 
         
+    def is_nsfw_channel(self, channel) -> bool:
+        if getattr(channel, "guild", None) is None:
+            return True
+        if isinstance(channel, discord.Thread):
+            channel = channel.parent
+        return bool(channel and getattr(channel, "is_nsfw", lambda: False)())
 
     # --- 各個網址的處理邏輯 ---
     async def handler_jm(self, message, url, match):
         # await message.channel.send(f"偵測到 JM 網址: {url}")
         if is_embed_ban(server_id=message.channel.id, arg="jm"):
             return
+        url = url.replace("/photo", "/album")
         embed = await asyncio.to_thread(jm_embed, url)
         view = NumberView3(embed=embed)
         await message.channel.send(embed=embed, view=view)
@@ -157,26 +168,54 @@ class Events(commands.Cog):
 
 
     async def handler_wnacg(self, message, url, match):
+        if self.is_nsfw_channel(message.channel) is False:
+            return
         if is_embed_ban(server_id=message.channel.id, arg="wn"):
             return
         content_id = match.group(2)
         embed = await create_wnacg_embed(self.bot.session, content_id)
-        view = NumberView2(session=self.bot.session, embed=embed)
         if embed not in [404, 403]:
+            view = NumberView2(session=self.bot.session, embed=embed)
             await message.channel.send(embed=embed, view=view)
             await message.edit(suppress=True)
 
+
+    async def handler_wnacg_view(self, message, url, match):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        # photos-view-id-*.html 是單頁瀏覽連結，view id 跟相簿的 aid 無關，
+        # 需要先進去該頁面反查所屬的 aid 與頁碼，才能組出跟 handler_wnacg 一樣的 embed
+        if is_embed_ban(server_id=message.channel.id, arg="wn"):
+            return
+        view_id = match.group(2)
+        resolved = await resolve_wnacg_view(self.bot.session, view_id)
+        if resolved is None:
+            return
+        digit, page_num = resolved
+        embed = await create_wnacg_embed(self.bot.session, digit, page_num=page_num)
+        if embed not in [404, 403]:
+            view = NumberView2(session=self.bot.session, embed=embed)
+            await message.channel.send(embed=embed, view=view)
+            try:
+                await message.edit(suppress=True)
+            except discord.Forbidden:
+                pass
+
     async def handler_nhentai(self, message, url, match):
+        if self.is_nsfw_channel(message.channel) is False:
+            return
         if is_embed_ban(server_id=message.channel.id, arg="nh"):
             return
         content_id = match.group(1)
         embed = await test_embed(session=self.bot.session, sec5h=self.bot.missav_crawl, digit=content_id, cf_clearance="", csrftoken="")
-        view = NumberView(embed=embed)
+        view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
         if embed:
             await message.channel.send(embed=embed, view=view)
             await message.edit(suppress=True)
 
     async def handler_xvideo(self, message, url, match):
+        if self.is_nsfw_channel(message.channel) is False:
+            return
         if is_embed_ban(server_id=message.channel.id, arg="andy"):
             return
         embed, video_url = await asyncio.to_thread(xvideo_embed, url)
@@ -186,6 +225,8 @@ class Events(commands.Cog):
             await message.edit(suppress=True)
 
     async def handler_pornhub(self, message, url, match):
+        if self.is_nsfw_channel(message.channel) is False:
+            return
         embed = await get_pornhub_embed(url)
         if embed:
             await message.channel.send(embed=embed)
@@ -198,13 +239,13 @@ class Events(commands.Cog):
         title = soup.find('meta', attrs={'property': 'og:title'})
         image = soup.find('meta', attrs={'property': 'og:image'})
 
-        embed = discord.Embed(title=title['content'], url=url)
+        embed = discord.Embed(title=title['content'], url=url, color=MISSAV["color"])
         if image:
             embed.set_image(url=image['content'])
         if description:
             embed.description = description['content']
 
-        embed.set_author(name="MissAV", url=url)
+        embed.set_author(name=MISSAV["name"], url=url, icon_url=MISSAV["icon_url"])
 
         await message.channel.send(embed=embed)
         await message.edit(suppress=True)
@@ -215,11 +256,11 @@ class Events(commands.Cog):
         title = soup.find('meta', attrs={'property': 'og:title'})
         image = soup.find('meta', attrs={'property': 'og:image'})
 
-        embed = discord.Embed(title=title['content'], url=url)
+        embed = discord.Embed(title=title['content'], url=url, color=JABLE["color"])
         if image:
             embed.set_image(url=image['content'])
 
-        embed.set_author(name="Jable", url=url)
+        embed.set_author(name=JABLE["name"], url=url, icon_url=JABLE["icon_url"])
 
         await message.channel.send(embed=embed)
         await message.edit(suppress=True)
@@ -243,6 +284,43 @@ class Events(commands.Cog):
         print(embed)
         await message.channel.send(embed=embed)
         await message.edit(suppress=True)
+
+    async def handler_facebook(self, message, url, match):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="fb"):
+            return
+        data = await get_facebook_data(url)
+        if data:
+            post_text = data.get("post_text") or ""
+            embed = discord.Embed(title=data.get("title"), url=url, description=post_text)
+            if data.get("views"):
+                embed.add_field(name="觀看次數", value=data["views"], inline=True)
+            images = data.get("images", [])
+            if not images and data.get("image") and not data.get("video"):
+                images = [data["image"]]
+            if data.get("icon"):
+                embed.set_author(name="Facebook", url="https://www.facebook.com/", icon_url=data["icon"])
+            else:
+                embed.set_author(name="Facebook", url="https://www.facebook.com/", icon_url="https://upload.wikimedia.org/wikipedia/commons/6/6c/Facebook_Logo_2023.png")
+            embed.color = discord.Color(0x1877F2)  # Facebook 藍色
+            likes = f"👍 {data['likes']}" if data.get("likes") else None
+            comments = f"💬 {data['comments']}" if data.get("comments") else None
+            shares = f"🔁 {data['shares']}" if data.get("shares") else None
+            embed.set_footer(text= "． ".join(filter(None, [likes, comments, shares])))
+            if images:
+                # 同 URL 的 embed 組成相簿，只顯示貼文前四張附圖。
+                embeds = []
+                for index, image in enumerate(images[:4]):
+                    item = embed if index == 0 else discord.Embed(
+                        url=url, color=discord.Color(0x1877F2)
+                    )
+                    item.set_image(url=image)
+                    embeds.append(item)
+                await message.channel.send(embeds=embeds)
+            else:
+                await message.channel.send(embed=embed)
+            if data.get("video"):
+                await message.channel.send(f"[連結]({data['video']})")
+            await message.edit(suppress=True)
 
     async def keyword_handler_gacha(self, message):
         data, status = process_gacha_data(message.author.id, message.channel.id)

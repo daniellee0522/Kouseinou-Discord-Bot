@@ -63,7 +63,7 @@ class MyBot(commands.Bot):
         await super().close()
 
     async def on_ready(self):
-        self.add_view(NumberView())
+        self.add_view(NumberView(session=self.session, sec5h=self.missav_crawl))
         self.add_view(NumberView2(session=self.session))
         self.add_view(NumberView3())
 
