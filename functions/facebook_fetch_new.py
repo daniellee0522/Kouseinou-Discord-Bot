@@ -171,7 +171,12 @@ def _extract_icon_uri_from_html(html: str):
     return None
 
 
-def _extract_author_name(root: dict, owner_id: str = None):
+def _is_viewer(node: dict, viewer_id: str) -> bool:
+    """登入 cookie 的帳號（c_user）本人，不可當作發文者"""
+    return bool(viewer_id) and str(node.get("id")) == viewer_id
+
+
+def _extract_author_name(root: dict, owner_id: str = None, viewer_id: str = None):
     """從 JSON blocks 撈發文者名字，按優先順序嘗試多個路徑"""
     # 方法0: 已知擁有者 id（reel 的 actor 是登入者本人，不能用）
     if owner_id:
@@ -180,19 +185,20 @@ def _extract_author_name(root: dict, owner_id: str = None):
                 for key in ("owner", "actor", "video_owner"):
                     v = oo.get(key)
                     if isinstance(v, dict) and str(v.get("id")) == owner_id \
+                            and str(v.get("id")) != viewer_id \
                             and isinstance(v.get("name"), str) and v["name"]:
                         return v["name"]
 
     # 方法1: actor -> name（最常見，一般貼文、photo）
     for oo in jq_enumerate(root):
-        if "actor" in oo and isinstance(oo["actor"], dict):
+        if "actor" in oo and isinstance(oo["actor"], dict) and not _is_viewer(oo["actor"], viewer_id):
             name = oo["actor"].get("name")
             if name and isinstance(name, str):
                 return name
 
     # 方法2: owner -> name（Reel / video 頁常見）
     for oo in jq_enumerate(root):
-        if "owner" in oo and isinstance(oo["owner"], dict):
+        if "owner" in oo and isinstance(oo["owner"], dict) and not _is_viewer(oo["owner"], viewer_id):
             name = oo["owner"].get("name")
             if name and isinstance(name, str):
                 return name
@@ -201,7 +207,7 @@ def _extract_author_name(root: dict, owner_id: str = None):
     cs = jq_first(root, "creation_story")
     if isinstance(cs, dict):
         actor = cs.get("actor")
-        if isinstance(actor, dict):
+        if isinstance(actor, dict) and not _is_viewer(actor, viewer_id):
             name = actor.get("name")
             if name:
                 return name
@@ -210,7 +216,7 @@ def _extract_author_name(root: dict, owner_id: str = None):
     sfvc = jq_first(root, "short_form_video_context")
     if isinstance(sfvc, dict):
         vo = sfvc.get("video_owner")
-        if isinstance(vo, dict):
+        if isinstance(vo, dict) and not _is_viewer(vo, viewer_id):
             name = vo.get("name")
             if name:
                 return name
@@ -614,6 +620,7 @@ def _reel_url_from_share(url: str, final_url: str):
 async def get_facebook_data(url: str) -> dict:
     url = _normalize_url(url)
     cookies = load_cookies()
+    viewer_id = cookies.get("c_user")
     async with (
         AsyncSession(impersonate="chrome120") as anon_session,
         AsyncSession(impersonate="chrome120") as logged_session,
@@ -658,9 +665,9 @@ async def get_facebook_data(url: str) -> dict:
             m = re.search(r'content_owner_id_new\\?"\s*:\s*\\?"(\d+)', html_logged)
             oid = m.group(1) if m else None
         data["title"] = _extract_author_name(
-            {"blocks": get_json_blocks(BeautifulSoup(html_anon, "html.parser"))}, oid
+            {"blocks": get_json_blocks(BeautifulSoup(html_anon, "html.parser"))}, oid, viewer_id
         ) or _extract_author_name(
-            {"blocks": get_json_blocks(BeautifulSoup(html_logged, "html.parser"))}, oid
+            {"blocks": get_json_blocks(BeautifulSoup(html_logged, "html.parser"))}, oid, viewer_id
         )
 
     data["icon"] = None
