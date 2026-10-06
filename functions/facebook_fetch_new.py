@@ -350,7 +350,35 @@ def _extract_video_url(html: str):
     sd = re.search(r'"playable_url"\s*:\s*"([^"]+)"', html)
     if sd:
         return sd.group(1).replace("\\/", "/")
-    return None
+    # 新版 FB：progressive_urls 陣列，metadata.quality 為 HD / SD
+    found = {}
+    for m in re.finditer(r'"progressive_url"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*?"metadata"\s*:\s*\{[^{}]*?"quality"\s*:\s*"(\w+)"', html):
+        try:
+            found.setdefault(m.group(2), json.loads(f'"{m.group(1)}"'))
+        except ValueError:
+            continue
+    return found.get("HD") or found.get("SD") or next(iter(found.values()), None)
+
+
+def _extract_reel_text(html: str, final_url: str):
+    """reel 頁面含多支影片的 message，取離該影片 id 最近的那一則"""
+    m = re.search(r'/reel/(\d+)', final_url)
+    if not m:
+        return None
+    positions = [x.start() for x in re.finditer(m.group(1), html)]
+    best = None
+    for msg in re.finditer(r'"message"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"', html):
+        if not positions:
+            break
+        dist = min(abs(msg.start() - p) for p in positions)
+        if dist < 8000 and (best is None or dist < best[0]):
+            try:
+                text = json.loads(f'"{msg.group(1)}"')
+            except ValueError:
+                continue
+            if text.strip():
+                best = (dist, text)
+    return best[1] if best else None
 
 
 def _extract_counts_from_html(html: str):
@@ -451,6 +479,7 @@ def parse_logged_in(html: str, final_url: str) -> dict:
 
     if is_reel_url(final_url):
         result["video"] = _extract_video_url(html)
+        result["post_text"] = _extract_reel_text(html, final_url)
 
         pt = jq_first(root, "preferred_thumbnail")
         if isinstance(pt, dict):
@@ -524,7 +553,7 @@ def parse_logged_in(html: str, final_url: str) -> dict:
 def merge_results(anon: dict, logged: dict) -> dict:
     images = _merge_images(anon.get("images", []), logged.get("images", []))
     return {
-        "video":       anon.get("video"),
+        "video":       anon.get("video") or logged.get("video"),
         "image":       images[0] if images else anon.get("image") or logged.get("image"),
         "images":      images,
         "title":       anon.get("title")       or logged.get("title"),
