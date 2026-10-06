@@ -171,8 +171,18 @@ def _extract_icon_uri_from_html(html: str):
     return None
 
 
-def _extract_author_name(root: dict):
+def _extract_author_name(root: dict, owner_id: str = None):
     """從 JSON blocks 撈發文者名字，按優先順序嘗試多個路徑"""
+    # 方法0: 已知擁有者 id（reel 的 actor 是登入者本人，不能用）
+    if owner_id:
+        for oo in jq_enumerate(root):
+            if isinstance(oo, dict):
+                for key in ("owner", "actor", "video_owner"):
+                    v = oo.get(key)
+                    if isinstance(v, dict) and str(v.get("id")) == owner_id \
+                            and isinstance(v.get("name"), str) and v["name"]:
+                        return v["name"]
+
     # 方法1: actor -> name（最常見，一般貼文、photo）
     for oo in jq_enumerate(root):
         if "actor" in oo and isinstance(oo["actor"], dict):
@@ -642,10 +652,15 @@ async def get_facebook_data(url: str) -> dict:
 
     # title 仍為 None → fallback 從 JSON 撈發文者名字
     if not data["title"]:
+        oid = re.search(r'[?&]id=(\d+)', final_url_anon) or re.search(r'[?&]id=(\d+)', final_url_logged)
+        oid = oid.group(1) if oid else None
+        if not oid:
+            m = re.search(r'content_owner_id_new\\?"\s*:\s*\\?"(\d+)', html_logged)
+            oid = m.group(1) if m else None
         data["title"] = _extract_author_name(
-            {"blocks": get_json_blocks(BeautifulSoup(html_anon, "html.parser"))}
+            {"blocks": get_json_blocks(BeautifulSoup(html_anon, "html.parser"))}, oid
         ) or _extract_author_name(
-            {"blocks": get_json_blocks(BeautifulSoup(html_logged, "html.parser"))}
+            {"blocks": get_json_blocks(BeautifulSoup(html_logged, "html.parser"))}, oid
         )
 
     data["icon"] = None
