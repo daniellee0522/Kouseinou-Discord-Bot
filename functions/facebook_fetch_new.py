@@ -588,7 +588,21 @@ async def fetch_html(session: AsyncSession, url: str, cookies: dict = None) -> t
     return resp.text, str(resp.url)
 
 
+def _normalize_url(url: str) -> str:
+    """facebook.com / m.facebook.com 一律換成 www，否則登入 cookie 抓不到 reel 頁"""
+    return re.sub(r'^(https?://)(?:m\.|web\.)?facebook\.com', r'\1www.facebook.com', url)
+
+
+def _reel_url_from_share(url: str, final_url: str):
+    """share/r 被導到 story.php 時，直接用 story_fbid 組出 reel 網址"""
+    if "/share/r/" not in url or "story.php" not in final_url:
+        return None
+    m = re.search(r'story_fbid=(\d+)', final_url)
+    return f"https://www.facebook.com/reel/{m.group(1)}/" if m else None
+
+
 async def get_facebook_data(url: str) -> dict:
+    url = _normalize_url(url)
     cookies = load_cookies()
     async with (
         AsyncSession(impersonate="chrome120") as anon_session,
@@ -602,6 +616,10 @@ async def get_facebook_data(url: str) -> dict:
         else:
             html_anon, final_url_anon = await fetch_html(anon_session, url, {})
             html_logged, final_url_logged = "", final_url_anon
+    reel_url = _reel_url_from_share(url, final_url_logged)
+    if reel_url and cookies and "progressive_url" not in html_logged:
+        async with AsyncSession(impersonate="chrome120") as retry_session:
+            html_logged, final_url_logged = await fetch_html(retry_session, reel_url, cookies)
     # print(debug_images(html_anon))
     anon_result   = parse_anonymous(html_anon,   final_url_anon)
     logged_result = parse_logged_in(html_logged, final_url_logged)
