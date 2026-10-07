@@ -1,3 +1,4 @@
+import asyncio
 import json
 import datetime
 import pytz
@@ -25,7 +26,7 @@ class 動畫瘋指令(Cog_Extension):
                 await interaction.response.send_message("Not available")
                 return
             await interaction.response.defer()
-            inf = anime_get_info(anime_name, R_18)
+            inf = await asyncio.to_thread(anime_get_info, anime_name, R_18)
             if inf != [] and inf != "fail to connect":
                 with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
                     data = json.load(f)
@@ -48,7 +49,7 @@ class 動畫瘋指令(Cog_Extension):
                         view1 = View()
                         view1.add_item(button1)
                         await i.response.edit_message(view=view1)
-                        anime_get_info_add(inf[0], server_id, R_18)
+                        await asyncio.to_thread(anime_get_info_add, inf[0], server_id, R_18)
                     button.callback = button_callback
                 view = View()
                 view.add_item(button)
@@ -79,7 +80,7 @@ class 動畫瘋指令(Cog_Extension):
         try:
             server_id = interaction.guild_id
             await interaction.response.defer()
-            inf = anime_lst()
+            inf = await asyncio.to_thread(anime_lst)
             if inf == "fail to connect":
                 await interaction.response.send_message("連線錯誤")
             else:
@@ -150,7 +151,7 @@ class 動畫瘋指令(Cog_Extension):
                 await interaction.response.send_message("Not available")
                 return
             await interaction.response.defer()
-            result = anime_get_info_add(anime_name, server_id, R_18)
+            result = await asyncio.to_thread(anime_get_info_add, anime_name, server_id, R_18)
             if result == "repeated":
                 print("test")
                 await interaction.followup.send("已經訂閱過了")

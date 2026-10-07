@@ -31,7 +31,7 @@ class Task(Cog_Extension):
                         for i in range(len(j_data[str(server_id)])):
                             if now_time == j_data[str(server_id)][i]["update_time"] and now_weekday+1 ==  j_data[str(server_id)][i]["update_date"] and now_sec>1:
                                 try:
-                                    response = check_and_update(i,server_id)
+                                    response = await asyncio.to_thread(check_and_update, i, server_id)
                                     # print("執行爬蟲")
                                     if response == "already updated":
                                         # print(j_data[str(server_id)][i]["name"])

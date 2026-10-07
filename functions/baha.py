@@ -114,7 +114,7 @@ def bahaog(url, BAHAENUR, BAHARUNE, sac_bh):
                 "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Mobile Safari/537.36"
             })
 
-        with req.urlopen(request) as response:
+        with req.urlopen(request, timeout=15) as response:
             data = response.read().decode("utf-8")
         soup = bs4.BeautifulSoup(data, "html.parser")
         title = soup.select_one('meta[property="og:title"]').get('content')
@@ -146,7 +146,7 @@ def bahaog(url, BAHAENUR, BAHARUNE, sac_bh):
                 "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Mobile Safari/537.36"
             })
 
-        with req.urlopen(request) as response:
+        with req.urlopen(request, timeout=15) as response:
             data = response.read().decode("utf-8")
         soup = bs4.BeautifulSoup(data, "html.parser")
         title = soup.select_one('meta[property="og:title"]').get('content')

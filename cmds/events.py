@@ -280,7 +280,7 @@ class Events(commands.Cog):
             return
         BAHAENUR = sac_bh.get('BAHAENUR')
         BAHARUNE = sac_bh.get('BAHARUNE')
-        embed = bahaog(url=url, BAHAENUR=BAHAENUR, BAHARUNE=BAHARUNE, sac_bh=sac_bh)
+        embed = await asyncio.to_thread(bahaog, url=url, BAHAENUR=BAHAENUR, BAHARUNE=BAHARUNE, sac_bh=sac_bh)
         print(embed)
         await message.channel.send(embed=embed)
         await message.edit(suppress=True)

@@ -1,3 +1,5 @@
+import threading
+import functools
 import json
 import requests
 from bs4 import BeautifulSoup
@@ -5,6 +7,18 @@ import config
 
 
 #return = [動畫名,動畫集數,播放網址,動畫縮圖]
+
+# sub.json 會被 thread 同時讀寫（指令 + 排程），用鎖避免互相覆蓋
+_SUB_LOCK = threading.RLock()
+
+
+def _sub_lock(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        with _SUB_LOCK:
+            return func(*args, **kwargs)
+    return wrapper
+
 def anime_get_info(input_name,R_18="n"):
     input_name = input_name.lower()
     count = 1
@@ -12,7 +26,7 @@ def anime_get_info(input_name,R_18="n"):
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
 }
-    r = requests.get('https://ani.gamer.com.tw/', headers=headers)
+    r = requests.get('https://ani.gamer.com.tw/', headers=headers, timeout=10)
     if r.status_code == 200:
         #print(f'請求成功：{r.status_code}')
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -58,6 +72,7 @@ def anime_get_info(input_name,R_18="n"):
         return "fail to connect"
 
 #return = [動畫名,動畫集數,星期幾更新,幾點更新]
+@_sub_lock
 def anime_get_info_add(input_name,server_id,R_18="n"):
     input_name = input_name.lower()
     with open(config.DATA_DIR / 'sub.json',encoding = "utf8") as f :
@@ -87,7 +102,7 @@ def anime_get_info_add(input_name,server_id,R_18="n"):
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
     }
-    r = requests.get('https://ani.gamer.com.tw/', headers=headers)
+    r = requests.get('https://ani.gamer.com.tw/', headers=headers, timeout=10)
     if r.status_code == 200:
         #print(f'請求成功：{r.status_code}')
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -151,7 +166,7 @@ def anime_lst():
     headers = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
     }
-    r = requests.get('https://ani.gamer.com.tw/', headers=headers)
+    r = requests.get('https://ani.gamer.com.tw/', headers=headers, timeout=10)
     if r.status_code == 200:
         #print(f'請求成功：{r.status_code}')
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -192,6 +207,7 @@ def anime_lst():
         print(f'請求失敗：{r.status_code}')
         return "fail to connect"
 
+@_sub_lock
 def check_and_update(index,server_id):         #判斷動畫是否更新
     week_lst=["一","二","三","四","五","六","日"]
     with open(config.DATA_DIR / 'sub.json','r',encoding='utf8') as f:
@@ -200,7 +216,7 @@ def check_and_update(index,server_id):         #判斷動畫是否更新
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.45 Safari/537.36',
     }
     try:
-        r = requests.get('https://ani.gamer.com.tw/', headers=headers)
+        r = requests.get('https://ani.gamer.com.tw/', headers=headers, timeout=10)
         if r.status_code == 200:
             #print(f'請求成功：{r.status_code}')
             soup = BeautifulSoup(r.text, 'html.parser')
@@ -258,4 +274,4 @@ def check_and_update(index,server_id):         #判斷動畫是否更新
     
 
 if __name__ == "__main__":
-    print(anime_get_info("ave"))
+    print(anime_get_info("ave"))
