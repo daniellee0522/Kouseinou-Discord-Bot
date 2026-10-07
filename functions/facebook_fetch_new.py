@@ -639,9 +639,16 @@ async def get_facebook_data(url: str) -> dict:
         AsyncSession(impersonate="chrome120") as logged_session,
     ):
         if cookies:
-            (html_anon, final_url_anon), (html_logged, final_url_logged) = await asyncio.gather(
+            results = await asyncio.gather(
                 fetch_html(anon_session, url, {}),
                 fetch_html(logged_session, url, cookies),
+                return_exceptions=True,
+            )
+            if all(isinstance(r, Exception) for r in results):
+                raise results[0]
+            # 其中一邊失敗（逾時 / 被擋）時，用另一邊的結果繼續
+            (html_anon, final_url_anon), (html_logged, final_url_logged) = (
+                r if not isinstance(r, Exception) else ("", url) for r in results
             )
         else:
             html_anon, final_url_anon = await fetch_html(anon_session, url, {})
