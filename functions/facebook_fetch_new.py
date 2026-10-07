@@ -668,8 +668,11 @@ async def get_facebook_data(url: str) -> dict:
         async with AsyncSession(impersonate="chrome120") as retry_session:
             html_logged, final_url_logged = await fetch_html(retry_session, reel_url, cookies)
     # print(debug_images(html_anon))
-    anon_result   = parse_anonymous(html_anon,   final_url_anon)
-    logged_result = parse_logged_in(html_logged, final_url_logged)
+    # 解析是純 CPU（2~5MB 的 HTML），丟到 thread 並行，避免卡住 bot 的 event loop
+    anon_result, logged_result = await asyncio.gather(
+        asyncio.to_thread(parse_anonymous, html_anon, final_url_anon),
+        asyncio.to_thread(parse_logged_in, html_logged, final_url_logged),
+    )
     data = merge_results(anon_result, logged_result)
 
     # m_anon = re.search(r'xlink:href="(https://[^"]+/t1\.[^"]+)"', html_anon)
