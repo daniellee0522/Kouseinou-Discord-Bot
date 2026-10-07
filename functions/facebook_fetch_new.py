@@ -1,4 +1,5 @@
 import re
+import base64
 import json
 import logging
 import asyncio
@@ -389,25 +390,34 @@ def _extract_video_url(html: str, final_url: str = ""):
     return None
 
 
-def _extract_reel_text(html: str, final_url: str):
-    """reel 頁面含多支影片的 message，取離該影片 id 最近的那一則"""
+def _story_belongs_to(node: dict, video_id: str) -> bool:
+    """story 節點是否屬於該影片：id 是 base64（…:VK:<video_id>），或 tracking 帶有該 video_id"""
+    sid = node.get("id")
+    if isinstance(sid, str):
+        try:
+            decoded = base64.b64decode(sid + "=" * (-len(sid) % 4)).decode("utf-8", "ignore")
+            if decoded.endswith(":" + video_id):
+                return True
+        except Exception:
+            pass
+    tracking = node.get("tracking")
+    return isinstance(tracking, str) and bool(
+        re.search(r'"(?:video_id|top_level_post_id)"\s*:\s*"%s"' % video_id, tracking))
+
+
+def _extract_reel_text(html: str, final_url: str, root: dict = None):
+    """reel 頁面含多支影片的 story；依節點本身的 id 對應影片，對不到就不回傳（避免貼到別支的內文）"""
     m = re.search(r'/reel/(\d+)', final_url)
-    if not m:
+    if not m or root is None:
         return None
-    positions = [x.start() for x in re.finditer(m.group(1), html)]
-    best = None
-    for msg in re.finditer(r'"message"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"', html):
-        if not positions:
-            break
-        dist = min(abs(msg.start() - p) for p in positions)
-        if dist < 8000 and (best is None or dist < best[0]):
-            try:
-                text = json.loads(f'"{msg.group(1)}"')
-            except ValueError:
-                continue
-            if text.strip():
-                best = (dist, text)
-    return best[1] if best else None
+    video_id = m.group(1)
+    for node in jq_enumerate(root):
+        if not isinstance(node, dict):
+            continue
+        msg = node.get("message")
+        if isinstance(msg, dict) and msg.get("text") and _story_belongs_to(node, video_id):
+            return msg["text"]
+    return None
 
 
 def _extract_counts_from_html(html: str):
@@ -508,7 +518,7 @@ def parse_logged_in(html: str, final_url: str) -> dict:
 
     if is_reel_url(final_url):
         result["video"] = _extract_video_url(html, final_url)
-        result["post_text"] = _extract_reel_text(html, final_url)
+        result["post_text"] = _extract_reel_text(html, final_url, root)
 
         pt = jq_first(root, "preferred_thumbnail")
         if isinstance(pt, dict):
