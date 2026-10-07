@@ -358,22 +358,35 @@ def _merge_images(*groups):
     return images
 
 
-def _extract_video_url(html: str):
-    """從原始 HTML 撈影片網址（HD 優先，SD 備用）"""
-    hd = re.search(r'"browser_native_hd_url"\s*:\s*"([^"]+)"', html)
-    if hd:
-        return hd.group(1).replace("\\/", "/")
-    sd = re.search(r'"playable_url"\s*:\s*"([^"]+)"', html)
-    if sd:
-        return sd.group(1).replace("\\/", "/")
-    # 新版 FB：progressive_urls 陣列，metadata.quality 為 HD / SD
-    found = {}
-    for m in re.finditer(r'"progressive_url"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*?"metadata"\s*:\s*\{[^{}]*?"quality"\s*:\s*"(\w+)"', html):
-        try:
-            found.setdefault(m.group(2), json.loads(f'"{m.group(1)}"'))
-        except ValueError:
+def _target_video_ids(url: str) -> set:
+    """從網址取出該貼文自己的影片 / 貼文 id（reel、videos、watch?v=、story_fbid、fbid）"""
+    ids = set(re.findall(r'/(?:reel|videos)/(?:[^/?]+/)?(\d+)', url))
+    ids |= set(re.findall(r'[?&](?:v|story_fbid|fbid|video_id)=(\d+)', url))
+    return ids
+
+
+def _extract_video_url(html: str, final_url: str = ""):
+    """只撈「屬於這則貼文」的影片網址（HD 優先，SD 備用）。
+    頁面常夾帶推薦 / 其他貼文的影片，所以必須以網址中的 id 比對，比不到就不回傳"""
+    targets = _target_video_ids(final_url)
+    if not targets:
+        return None
+    groups = [m.start() for m in re.finditer(r'"progressive_urls"', html)]
+    for i, start in enumerate(groups):
+        ids = re.findall(r'dash_mpd_debug\.mpd\?v=(\d+)', html[max(0, start - 6000):start])
+        if not ids or ids[-1] not in targets:
             continue
-    return found.get("HD") or found.get("SD") or next(iter(found.values()), None)
+        end = groups[i + 1] if i + 1 < len(groups) else start + 20000
+        found = {}
+        for m in re.finditer(r'"progressive_url"\s*:\s*"((?:[^"\\]|\\.)*)"[^{}]*?"metadata"\s*:\s*\{[^{}]*?"quality"\s*:\s*"(\w+)"', html[start:end]):
+            try:
+                found.setdefault(m.group(2), json.loads(f'"{m.group(1)}"'))
+            except ValueError:
+                continue
+        url = found.get("HD") or found.get("SD") or next(iter(found.values()), None)
+        if url:
+            return url
+    return None
 
 
 def _extract_reel_text(html: str, final_url: str):
@@ -459,7 +472,7 @@ def parse_anonymous(html: str, final_url: str) -> dict:
     image = images[0] if images else None
     if not image and is_reel_url(final_url):
         image = og.get("og:image")
-    video = _extract_video_url(html)
+    video = _extract_video_url(html, final_url)
 
     # title：固定取 og:title（發文者名字）
     # post_text：固定獨立撈內文，不互相 fallback
@@ -494,7 +507,7 @@ def parse_logged_in(html: str, final_url: str) -> dict:
     }
 
     if is_reel_url(final_url):
-        result["video"] = _extract_video_url(html)
+        result["video"] = _extract_video_url(html, final_url)
         result["post_text"] = _extract_reel_text(html, final_url)
 
         pt = jq_first(root, "preferred_thumbnail")
@@ -550,7 +563,7 @@ def parse_logged_in(html: str, final_url: str) -> dict:
             except (KeyError, TypeError):
                 continue
 
-        result["video"] = _extract_video_url(html)
+        result["video"] = _extract_video_url(html, final_url)
 
         # photo 頁面 fallback
         result["images"] = _extract_image_uris(root, final_url)
