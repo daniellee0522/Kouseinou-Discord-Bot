@@ -49,7 +49,41 @@ def _parse_jm_page(html, url):
         return None
     page_count = int(re.search(r"\d+", pagecount_span.get_text()).group())
 
-    return title, page_count, album_id
+    return title, page_count, album_id, _parse_jm_meta(soup)
+
+
+def _parse_jm_meta(soup):
+    """作品／登場人物／標籤／作者：頁面上同一組區塊會出現兩次（手機/桌面版），只取第一次出現的。"""
+    meta = {}
+    for span in soup.select("span[data-type]"):
+        key = span.get("data-type")
+        if key in meta:
+            continue
+        names = []
+        for a in span.find_all("a"):
+            name = a.get_text(strip=True)
+            if name and name not in names:
+                names.append(name)
+        meta[key] = names
+    return meta
+
+
+# (data-type, 欄位名稱, 最多顯示幾個)；順序跟 nhentai / wnacg 一致：作者、標籤…最後才是頁數
+JM_META_FIELDS = [
+    ("author", "作者", 10),
+    ("tags", "標籤", 30),
+    ("works", "作品", 5),
+    ("actor", "登場人物", 10),
+]
+
+
+def _meta_value(names, limit):
+    value = "、".join(names[:limit])
+    if len(names) > limit:
+        value += f" …等 {len(names)} 個"
+    # Discord 欄位上限 1024 字
+    return value if len(value) <= 1024 else value[:1021] + "..."
+
 
 
 def jm_crawl(url):
@@ -83,13 +117,17 @@ def jm_crawl(url):
 def jm_embed(url):
     id = extract_number_from_url(url)
     if id == None:
-        title, page, id = jm_crawl(url)
+        title, page, id, meta = jm_crawl(url)
     else:
-        title, page, _ = jm_crawl(url)
+        title, page, _, meta = jm_crawl(url)
 
     embed = discord.Embed(title=title, url=url, color=0xe37e31)
     embed.set_author(
         name="禁漫天堂", icon_url="https://i.imgur.com/dYVERFN.png")
+    for key, name, limit in JM_META_FIELDS:
+        names = meta.get(key)
+        if names:
+            embed.add_field(name=name, value=_meta_value(names, limit))
     embed.add_field(name="頁數", value=page)
     embed.set_thumbnail(url=f"{config.PIC_PROXY_URL}/transform?url=https://cdn-msp3.18comic.org/media/albums/{id}.jpg")
     url3 = f"https://cdn-msp.18comic.org/media/photos/{id}/00001.webp"
