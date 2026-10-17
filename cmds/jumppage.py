@@ -2,9 +2,11 @@ import discord
 from discord import app_commands, Interaction, ui, TextStyle, Message, Embed
 import re
 from core.classes import Cog_Extension
-from functions.wnacg import find_img_new, NumberView2
-from functions.nhentai import nhentai_crawl, extract_numbers, NumberView
-from functions.jm import extract_number_from_url, fillnum, NumberView3
+from functions.wnacg import get_page_image, apply_page, embed_thread_hint, NumberView2
+from functions.nhentai import nh_page_image, nh_gallery, extract_numbers, NumberView
+from functions.jm import extract_number_from_url, jm_page_image, jm_gallery, JM_COLOR, NumberView3
+import asyncio
+from functions.cdn_pages import apply_page as apply_cdn_page, strip_fragment, edit_attachments, run_within_deadline
 
 
 # ===== Modal：讓使用者輸入頁數 =====
@@ -49,46 +51,51 @@ class JumpPageModal(ui.Modal, title="跳轉頁數"):
                 f"頁數需介於 1 到 {page} 之間。", ephemeral=True
             )
 
-        await interaction.response.defer(ephemeral=True)
-
-        # --- 3. 更新 embed 圖片 ---
-        img = None
-        if embed.author.name == "wnacg":
-            digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
-
-            img = await find_img_new(self.bot.session, digit=digit, page=page, page_num=target_page)
-            embed.set_footer(text=str(target_page))
-            view = NumberView2(session=self.bot.session)
-            view.middle_button.label = f"{target_page}/{page}"
-
-        elif embed.author.name == "nhentai":
-            title = embed.url
-            number = extract_numbers(title)[0]
-            _, _, _, _, link_lst = await nhentai_crawl(self.bot.session, self.bot.missav_crawl, number)
-            img = link_lst[target_page - 1]
-            view = NumberView(session=self.bot.session, sec5h=self.bot.missav_crawl)
-            view.middle_button.label = f"{target_page}/{page}"
-        
-        elif embed.author.name == "禁漫天堂":
-            title = embed.url
-            id = extract_number_from_url(title)
-            img = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(target_page)}.webp"
-            view = NumberView3()
-            view.middle_button.label = f"{target_page}/{page}"
-
-
-        else:
-            return await interaction.followup.send(
+        if embed.author.name not in ("wnacg", "nhentai", "禁漫天堂"):
+            return await interaction.response.send_message(
                 "不支援此 embed 的跳轉頁數功能。", ephemeral=True
             )
 
-        if img:
-            embed.set_image(url=img)
-            await self.target_message.edit(embed=embed, view=view)
+        # --- 3. 更新 embed 圖片 ---
+        async def work():
+            if embed.author.name == "wnacg":
+                digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
 
-        await interaction.followup.send(
-            f"已跳轉到第 {target_page} 頁。", ephemeral=True
-        )
+                cdn = getattr(self.bot, 'image_cdn', None)
+                img = await get_page_image(self.bot.session, cdn, digit, target_page, page=page,
+                                           thread_hint=embed_thread_hint(embed), inline=True)
+                apply_page(embed, img, target_page, cdn, digit)
+                view = NumberView2(session=self.bot.session)
+                view.middle_button.label = f"{target_page}/{page}"
+
+            elif embed.author.name == "nhentai":
+                cdn = getattr(self.bot, 'image_cdn', None)
+                number = extract_numbers(strip_fragment(embed.url))[0]
+                img = await nh_page_image(self.bot.session, self.bot.missav_crawl, cdn, number, target_page,
+                                          thread_hint=embed_thread_hint(embed), inline=True)
+                apply_cdn_page(embed, img, target_page, cdn, nh_gallery(number))
+                view = NumberView(session=self.bot.session, sec5h=self.bot.missav_crawl)
+                view.middle_button.label = f"{target_page}/{page}"
+
+            else:
+                cdn = getattr(self.bot, 'image_cdn', None)
+                id = extract_number_from_url(strip_fragment(embed.url))
+                img = await jm_page_image(cdn, id, target_page, total=page, thread_hint=embed_thread_hint(embed),
+                                          inline=True)
+                apply_cdn_page(embed, img, target_page, cdn, jm_gallery(id), colour=JM_COLOR)
+                view = NumberView3()
+                view.middle_button.label = f"{target_page}/{page}"
+
+            return dict(embed=embed, view=view, attachments=edit_attachments(embed)) if img else None
+
+        # 2 秒內備妥就直接回覆（省一次 defer）；更新訊息與回覆確認同時送出
+        kwargs, deferred = await run_within_deadline(interaction, work, ephemeral=True)
+        confirm = f"已跳轉到第 {target_page} 頁。"
+        jobs = [interaction.followup.send(confirm, ephemeral=True) if deferred
+                else interaction.response.send_message(confirm, ephemeral=True)]
+        if kwargs:
+            jobs.insert(0, self.target_message.edit(**kwargs))
+        await asyncio.gather(*jobs)
 
 
 # ===== Cog：右鍵選單 =====

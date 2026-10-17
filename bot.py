@@ -11,6 +11,8 @@ from functions.nhentai import NumberView
 from functions.wnacg import NumberView2
 import aiohttp
 from functions.jm import NumberView3
+from functions.discord_cdn import DiscordImageCDN
+import config
 
 os.chdir(Path(__file__).parent)  # 將工作目錄切換到腳本所在的目錄
 logging.basicConfig(level=logging.INFO)
@@ -29,7 +31,11 @@ class MyBot(commands.Bot):
         super().__init__(
             command_prefix='$',
             intents=intents,
-            help_command=None 
+            help_command=None,
+            # 不在啟動時逐一抓取每個伺服器的成員：伺服器超過約 110 個時，
+            # 啟動瞬間的成員請求會撞到 gateway 送出上限（60 秒約 110 次），卡住約一分鐘才 ready。
+            # on_member_join 等成員事件不受影響。
+            chunk_guilds_at_startup=False,
         )
         self.session = None
 
@@ -47,6 +53,7 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         """這是在機器人啟動前會執行的異步初始化函數"""
         self.session = aiohttp.ClientSession()
+        self.image_cdn = DiscordImageCDN(self, config.IMAGE_CDN_CHANNEL_ID)
         # 載入所有 Cog
         for filename in os.listdir('./cmds'):
             if filename.endswith('.py'):
@@ -60,12 +67,14 @@ class MyBot(commands.Bot):
         # 關閉機器人時同時關閉 Session，避免記憶體洩漏
         if self.session:
             await self.session.close()
+        await self.image_cdn.close()
         await super().close()
 
     async def on_ready(self):
         self.add_view(NumberView(session=self.session, sec5h=self.missav_crawl))
         self.add_view(NumberView2(session=self.session))
         self.add_view(NumberView3())
+        self.image_cdn.start()  # 掃描圖床頻道既有的討論串，重建本子 → 討論串的對應
 
         server_count = len(self.guilds)
         data = {

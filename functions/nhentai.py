@@ -9,6 +9,10 @@ import random
 import aiohttp
 from pathlib import Path
 import config
+from utils.ttl_cache import async_ttl_cache
+from functions.cdn_pages import (apply_page, cdn_page_image, embed_thread_hint, strip_fragment,
+                                 total_pages, JumpModal, reply_with_edit,
+                                 message_lock, edit_attachments)
 
 _NH_JSON = Path(__file__).parent.parent / 'data' / 'nh.json'
 
@@ -138,17 +142,63 @@ def add_url(digit: str):
     return url
 
 
-async def test_embed(session: aiohttp.ClientSession, sec5h, digit, cf_clearance, csrftoken, page=0):
+# 同一本 30 分鐘內不重爬：翻頁、跳頁、預載都共用這份圖片清單
+cached_nhentai_crawl = async_ttl_cache(ttl_seconds=1800, maxsize=128, key_arg="number")(nhentai_crawl)
+
+
+def nh_gallery(digit):
+    return f"nhentai-{digit}"
+
+
+NH_IMAGE_HOST = "i3"
+NH_HOST = re.compile(r"//i\d*\.nhentai\.net/")
+NH_WARM_URL = f"https://{NH_IMAGE_HOST}.nhentai.net/robots.txt"
+
+
+def nh_sources(src):
+    """所有 nhentai 圖片鏡像都能取任何一張圖；統一走同一台主機才能一直沿用同一條熱連線
+    （新連線一張圖約 2 秒，熱連線約 0.3 秒）。統一的主機失敗才退回原網址。"""
+    if not NH_HOST.search(src):
+        return src
+    unified = NH_HOST.sub(f"//{NH_IMAGE_HOST}.nhentai.net/", src, count=1)
+    return (unified, src) if unified != src else src
+
+
+async def nh_page_image(session, sec5h, cdn, digit, page_num, thread_hint=None, link_list=None, inline=False):
+    """第 page_num 頁（從 1 開始）的圖片網址：有圖床就是 Discord CDN 網址（並背景預載整本），
+    否則退回 nhentai 原圖。索引命中時完全不爬 nhentai。"""
+    digit = str(digit)
+
+    async def links():
+        if link_list:
+            return link_list
+        return (await cached_nhentai_crawl(session, sec5h, number=digit))[4]
+
+    async def src_of(n):
+        return nh_sources((await links())[n - 1])
+
+    async def total():
+        return len(await links())
+
+    url = await cdn_page_image(cdn, nh_gallery(digit), page_num, src_of, total, thread_hint=thread_hint,
+                               inline=inline)
+    return url or (await links())[int(page_num) - 1]
+
+
+async def test_embed(session: aiohttp.ClientSession, sec5h, digit, cf_clearance, csrftoken, page=0, cdn=None):
     url = add_url(digit)
+    if cdn is not None:
+        cdn.warm(NH_WARM_URL)  # 爬頁面的同時先連上圖片主機
     try:
-        title, thumbnail, result, link, link_list = await nhentai_crawl(session=session, sec5h=sec5h, number=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
+        title, thumbnail, result, link, link_list = await cached_nhentai_crawl(session=session, sec5h=sec5h, number=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
     except:
         error_code = await nhentai_crawl(session=session, sec5h=sec5h, number=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
         return error_code
     embed = discord.Embed(title=title, url=url)
     embed.set_thumbnail(url=thumbnail)
-    embed.set_image(
-        url=link_list[page] if 0 <= page < len(link_list) else link)
+    page_num = page + 1 if 0 <= page < len(link_list) else 1
+    img = await nh_page_image(session, sec5h, cdn, digit, page_num, link_list=link_list, inline=True)
+    apply_page(embed, img, page_num, cdn, nh_gallery(digit))
     # print(f"https://i3.nhentai.net/galleries/{digit}/1.jpg")
     for key, value in result.items():
         if key == "Artists":
@@ -223,117 +273,84 @@ def match_strip(link):
 class NumberView(View):
     def __init__(self,embed: discord.Embed = None, session: aiohttp.ClientSession = None, sec5h = None):
         super().__init__(timeout=None)
-        # self.message = message
         self.number = 1
         self.session = session
         self.sec5h = sec5h
-        self.lock = asyncio.Lock()
         # 舊訊息共用 persistent View，每次操作都從該訊息讀取頁碼。
 
         if embed != None:
-            embed_dict = {i.name: i.value for i in embed.fields}
-            num = embed_dict["頁數"]
-
-            # 設置中間按鈕的標籤
-            self.middle_button.label = f"{self.number}/{num}"
-            self.middle_button.disabled = True
+            self._sync_number(embed)
+            self.middle_button.label = f"{self.number}/{total_pages(embed)}"
 
     def _sync_number(self, embed: discord.Embed):
-        pattern = r"/(\d+)\.(?:webp|jpg|jpeg|png|gif|bmp)$"
-        match = re.search(pattern, embed.image.url)
+        """頁碼：footer → 圖床檔名（nhentai-<id>-<頁>.jpg）→ 舊版原圖網址（/<頁>.jpg）。"""
+        footer = getattr(embed, "footer", None)
+        if footer and footer.text and footer.text.isdigit():
+            self.number = int(footer.text)
+            return
+        url = embed.image.url or ""
+        if "cdn.discordapp.com" in url:
+            pattern = r"-(\d+)\.\w+(?:\?|$)"
+        else:
+            # 舊版：原圖或 NH_PROXY_URL?img=... 的網址；舊的重新整理鈕會在結尾加上 ?<亂數>
+            pattern = r"/(\d+)\.(?:webp|jpg|jpeg|png|gif|bmp)(?:\?|$)"
+        match = re.search(pattern, url)
         self.number = int(match.group(1)) if match else 1
 
-    async def _edit_twice(self, interaction: discord.Interaction, embed: discord.Embed):
-        # Discord 對「編輯訊息換上全新圖片網址」常常第一次抓不到圖(見
-        # discord-api-docs#6540），要再編輯一次同樣內容才會正常顯示，
-        # 這裡直接補一次相同的 edit 來規避。
-        await interaction.message.edit(embed=embed, view=self)
-        await asyncio.sleep(0.5)
-        await interaction.message.edit(embed=embed, view=self)
+    async def _render(self, interaction: discord.Interaction, embed: discord.Embed, target):
+        """翻頁、跳頁共用：只換圖片與頁碼，不再重爬整本；舊版 embed 會在這裡升級成圖床格式。"""
+        cdn = getattr(interaction.client, "image_cdn", None)
+        number = extract_numbers(strip_fragment(embed.url))[0]
+        total = total_pages(embed)
+        target = max(1, min(int(target), total)) if total else max(1, int(target))
+        img = await nh_page_image(self.session, self.sec5h, cdn, number, target,
+                                  thread_hint=embed_thread_hint(embed), inline=True)
+        apply_page(embed, img, target, cdn, nh_gallery(number))
+        self.number = target
+        self.middle_button.label = f"{target}/{total}"
+        return dict(embed=embed, view=self, attachments=edit_attachments(embed))
+
+    async def _go(self, interaction: discord.Interaction, target_of):
+        embed = interaction.message.embeds[0]
+
+        async def work():
+            async with message_lock(interaction.message.id):
+                self._sync_number(embed)
+                return await self._render(interaction, embed, target_of(self.number, total_pages(embed)))
+
+        await reply_with_edit(interaction, work)
 
     @discord.ui.button(label='<<', style=discord.ButtonStyle.gray, custom_id="0")
     async def decreasetostart(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        number = extract_numbers(title)[0]
-
-        async with self.lock:
-            self.number = 1
-
-            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-
-            self.middle_button.label = str(self.number)+"/" + num
-
-            await self._edit_twice(interaction, new_embed)
+        await self._go(interaction, lambda current, total: 1)
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="1")
     async def decrease(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        number = extract_numbers(title)[0]
+        await self._go(interaction, lambda current, total: max(1, current - 1))
 
-        async with self.lock:
-            self._sync_number(embed)
-            if self.number > 1:
-                self.number -= 1
-
-            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-
-            self.middle_button.label = str(self.number)+"/" + num
-
-            await self._edit_twice(interaction, new_embed)
-
-    @discord.ui.button(label="-", style=discord.ButtonStyle.gray, disabled=True, custom_id="2")
+    @discord.ui.button(label="-", style=discord.ButtonStyle.primary, custom_id="2")
     async def middle_button(self, interaction: discord.Interaction, button: Button):
-        embed = interaction.message.embeds[0]
-        url = embed.image.url
-        # url = remove_query_string(url)
-        url = url + "?" + str(random.randint(1, 1000))
-        embed.set_image(url=url)
-        await interaction.message.edit(embed=embed, view=self)
+        """中間按鈕：開啟跳頁視窗。"""
+        total = total_pages(interaction.message.embeds[0])
+
+        async def on_jump(modal_interaction, target):
+            embed = modal_interaction.message.embeds[0]
+
+            async def work():
+                async with message_lock(modal_interaction.message.id):
+                    return await self._render(modal_interaction, embed, target)
+
+            await reply_with_edit(modal_interaction, work)
+
+        await interaction.response.send_modal(JumpModal(total, on_jump))
 
     @discord.ui.button(label='>', style=discord.ButtonStyle.gray, custom_id="3")
     async def increase(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        number = extract_numbers(title)[0]
-
-        async with self.lock:
-            self._sync_number(embed)
-            if self.number + 1 <= int(num):
-                self.number += 1
-
-            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-
-            self.middle_button.label = str(self.number) + "/" + num
-
-            await self._edit_twice(interaction, new_embed)
+        await self._go(interaction, lambda current, total: min(total or current + 1, current + 1))
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="4")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        number = extract_numbers(title)[0]
-
-        async with self.lock:
-            self.number = int(num)
-            self.middle_button.label = str(self.number)+"/"+num
-
-            new_embed = await test_embed(session=self.session, sec5h=self.sec5h, digit=number, cf_clearance="", csrftoken="", page=self.number-1)
-
-            await self._edit_twice(interaction, new_embed)
+        await self._go(interaction, lambda current, total: total or current)
 
 
 async def main():

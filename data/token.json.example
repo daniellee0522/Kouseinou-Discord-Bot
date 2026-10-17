@@ -7,6 +7,7 @@
     "owner_id": 0,
     "guild_ids": [0, 0],
     "jm_log_channel_id": 0,
+    "image_cdn_channel_id": 0,
     "nh_proxy_url": "https://your-worker.workers.dev",
     "pic_proxy_url": "https://your-domain.example.com/pic",
     "media_base_url": "https://your-domain.example.com/media",

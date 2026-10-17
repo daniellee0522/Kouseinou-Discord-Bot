@@ -1,5 +1,6 @@
 """Execute the Facebook handler alone, without starting the bot or other cogs."""
 import ast
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -16,7 +17,7 @@ handler = next(node for node in ast.walk(tree)
 class FacebookEmbedTests(unittest.IsolatedAsyncioTestCase):
     async def run_handler(self, images):
         data = {'images': images, 'title': 'Example', 'post_text': 'Post text'}
-        namespace = {'discord': discord, 'get_facebook_data': AsyncMock(return_value=data),
+        namespace = {'discord': discord, 'asyncio': asyncio, 'get_facebook_data': AsyncMock(return_value=data),
                      'is_embed_ban': Mock(return_value=False)}
         exec(compile(ast.Module(body=[handler], type_ignores=[]), str(source), 'exec'), namespace)
         message = SimpleNamespace(guild=SimpleNamespace(id=123), channel=SimpleNamespace(send=AsyncMock()), edit=AsyncMock())

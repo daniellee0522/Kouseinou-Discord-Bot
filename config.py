@@ -20,6 +20,7 @@ GUILD_IDS               = _cfg.get('guild_ids', [])
 JM_LOG_CHANNEL_ID       = int(_cfg.get('jm_log_channel_id', 0))
 NH_PROXY_URL            = _cfg.get('nh_proxy_url', '')
 PIC_PROXY_URL           = _cfg.get('pic_proxy_url', '')
+IMAGE_CDN_CHANNEL_ID    = int(_cfg.get('image_cdn_channel_id', 0))  # 圖床頻道，0 = 不使用
 MEDIA_BASE_URL          = _cfg.get('media_base_url', '')
 VIDEO_PATH              = _cfg.get('video_path', str(_base / 'videos'))
 MD5_JSON_PATH           = _cfg.get('md5_json_path', str(DATA_DIR / 'md5.json'))

@@ -78,7 +78,7 @@ class ReviewRegressionTests(unittest.IsolatedAsyncioTestCase):
         await command(SimpleNamespace(bot=bot), interaction, 'TEST-001')
         interaction.followup.send.assert_awaited_once_with('目前無法取得資料，請稍後再試。')
 
-    async def test_jump_preserves_clients_and_defers_before_fetch(self):
+    async def test_jump_preserves_clients_and_replies_once(self):
         response = SimpleNamespace(defer=AsyncMock(), send_message=AsyncMock())
         interaction = SimpleNamespace(response=response, followup=SimpleNamespace(send=AsyncMock()))
         embed = discord.Embed(url='https://nhentai.net/g/123/')
@@ -86,15 +86,24 @@ class ReviewRegressionTests(unittest.IsolatedAsyncioTestCase):
         embed.add_field(name='頁數', value='5')
         target = SimpleNamespace(embeds=[embed], edit=AsyncMock())
         bot = SimpleNamespace(session=object(), missav_crawl=object())
-        async def crawl(*args):
-            response.defer.assert_awaited_once_with(ephemeral=True)
-            return None, None, None, None, ['https://example.com/1.jpg', 'https://example.com/2.jpg']
+        async def page_image(session, sec5h, cdn, number, page, thread_hint=None, inline=False):
+            self.assertIs(session, bot.session)
+            self.assertIs(sec5h, bot.missav_crawl)
+            return ['https://example.com/1.jpg', 'https://example.com/2.jpg'][page - 1]
         view_factory = Mock(return_value=SimpleNamespace(middle_button=SimpleNamespace(label='')))
+        from functions import cdn_pages
         submit = method('cmds/jumppage.py', 'on_submit', {
-            'Interaction': discord.Interaction, 'nhentai_crawl': crawl,
+            'Interaction': discord.Interaction, 'nh_page_image': page_image,
+            'nh_gallery': lambda number: f'nhentai-{number}',
+            'apply_cdn_page': cdn_pages.apply_page, 'strip_fragment': cdn_pages.strip_fragment,
+            'embed_thread_hint': cdn_pages.embed_thread_hint, 'edit_attachments': cdn_pages.edit_attachments,
+            'run_within_deadline': cdn_pages.run_within_deadline, 'JM_COLOR': 0xe37e31,
             'extract_numbers': lambda url: ('123', None), 'NumberView': view_factory})
         await submit(SimpleNamespace(bot=bot, target_message=target,
                                      page_input=SimpleNamespace(value='2')), interaction)
         view_factory.assert_called_once_with(session=bot.session, sec5h=bot.missav_crawl)
         self.assertEqual(embed.image.url, 'https://example.com/2.jpg')
-        interaction.followup.send.assert_awaited_once()
+        # 很快就備妥：不 defer，直接一次回覆確認，並同時更新原訊息
+        response.defer.assert_not_awaited()
+        response.send_message.assert_awaited_once()
+        target.edit.assert_awaited_once()

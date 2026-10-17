@@ -4,7 +4,8 @@ from core.classes import Cog_Extension
 from pathlib import Path
 from functions.nhentai import test_embed, NumberView
 from functions.wnacg import create_wnacg_embed, NumberView2
-from functions.jm import jm_embed, NumberView3
+from functions.jm import jm_embed_async, NumberView3
+from functions.cdn_pages import cdn_files, reply_with_send
 from functions.supav import supjav_crawl, supjav_search_embed
 from functions.missav_func import fetch_missav_embed, missav_fallback_embed
 from functions.jable import jable_embed
@@ -32,16 +33,17 @@ class HentaiEmbedCmd(commands.Cog):
     @app_commands.describe(digit="神秘數字")
     async def wnacg(self, interaction: discord.Interaction, digit: int):
         digit = str(digit)
-        await interaction.response.defer()
-        embed = await create_wnacg_embed(session=self.bot.session, digit=digit)
-        if embed == 404:
-            await interaction.followup.send("不存在")
-            return
-        elif embed == 403:
-            await interaction.followup.send("存取遭拒")
-            return
-        view = NumberView2(session=self.bot.session, embed=embed)
-        await interaction.followup.send(embed=embed, view=view)
+
+        async def work():
+            embed = await create_wnacg_embed(session=self.bot.session, digit=digit, cdn=getattr(self.bot, 'image_cdn', None))
+            if embed == 404:
+                return dict(content="不存在")
+            if embed == 403:
+                return dict(content="存取遭拒")
+            return dict(embed=embed, view=NumberView2(session=self.bot.session, embed=embed), **cdn_files(embed))
+
+        # 2 秒內備妥就一次回覆，不必先 defer 再 followup
+        await reply_with_send(interaction, work)
 
 
     @app_commands.command(name="av番號查詢", description="查詢av番號，優先順序: missav > jable > supjav")
@@ -122,13 +124,15 @@ class HentaiEmbedCmd(commands.Cog):
     @app_commands.describe(digit="神秘數字")
     async def jm(self, interaction: discord.Interaction, digit: int):
         url = f"https://18comic.vip/album/{digit}/"
-        try:
-            await interaction.response.defer()
-            embed = jm_embed(url)
-            view = NumberView3(embed=embed)
-            await interaction.followup.send(embed=embed, view=view)
-        except:
-            await interaction.followup.send("不存在或存取遭拒")
+
+        async def work():
+            try:
+                embed = await jm_embed_async(url, cdn=getattr(self.bot, 'image_cdn', None))
+            except Exception:
+                return dict(content="不存在或存取遭拒")
+            return dict(embed=embed, view=NumberView3(embed=embed), **cdn_files(embed))
+
+        await reply_with_send(interaction, work)
             
 
     @app_commands.command(name="nhentai", description="回傳nhentai embed")
@@ -139,16 +143,19 @@ class HentaiEmbedCmd(commands.Cog):
             data = json.load(file)
         cf_clearance = data["cf_clearance"]
         csrftoken = data["csrftoken"]
-        embed = await test_embed(session=self.bot.session, sec5h= self.bot.missav_crawl,
-            digit=digit, cf_clearance=cf_clearance, csrftoken=csrftoken)
-        if embed == 404:
-            await interaction.response.send_message("不存在")
-            return
-        elif embed == 403:
-            await interaction.response.send_message("存取遭拒")
-            return
-        view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
-        await interaction.response.send_message(embed=embed, view=view)
+        async def work():
+            embed = await test_embed(session=self.bot.session, sec5h= self.bot.missav_crawl,
+                digit=digit, cf_clearance=cf_clearance, csrftoken=csrftoken,
+                cdn=getattr(self.bot, 'image_cdn', None))
+            if embed == 404:
+                return dict(content="不存在")
+            if embed == 403:
+                return dict(content="存取遭拒")
+            view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
+            return dict(embed=embed, view=view, **cdn_files(embed))
+
+        # 2 秒內備妥就一次回覆；來不及（例如第一次上傳）才 defer 避免互動逾時
+        await reply_with_send(interaction, work)
 
 async def setup(bot):
     await bot.add_cog(HentaiEmbedCmd(bot))

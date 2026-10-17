@@ -6,9 +6,14 @@ from discord.ui import Button, View
 import re
 import io
 import sys
+import hashlib
+import time
 
 sys.path.append(r"./")
 import config
+from functions.cdn_pages import (apply_page, cdn_page_image, embed_thread_hint, schedule_prefetch,
+                                 strip_fragment, total_pages, JumpModal, reply_with_edit,
+                                 message_lock, edit_attachments)
 
 sys.stdout = io.TextIOWrapper(
     sys.stdout.buffer, encoding='utf-8')
@@ -85,7 +90,6 @@ def _meta_value(names, limit):
     return value if len(value) <= 1024 else value[:1021] + "..."
 
 
-
 def jm_crawl(url):
     # 先用有偽裝 TLS 指紋的直接請求，速度快、多數時候就能過 Cloudflare
     try:
@@ -114,14 +118,34 @@ def jm_crawl(url):
     return result
 
 
+# 同一本 30 分鐘內重貼不再重爬（只快取成功結果）
+JM_CRAWL_TTL = 1800
+_jm_crawl_cache = {}
+
+
+def jm_crawl_cached(url):
+    key = extract_number_from_url(url) or url
+    cached = _jm_crawl_cache.get(key)
+    if cached and cached[0] > time.monotonic():
+        return cached[1]
+    result = jm_crawl(url)
+    if len(_jm_crawl_cache) > 256:
+        _jm_crawl_cache.clear()
+    _jm_crawl_cache[key] = (time.monotonic() + JM_CRAWL_TTL, result)
+    return result
+
+
 def jm_embed(url):
     id = extract_number_from_url(url)
     if id == None:
-        title, page, id, meta = jm_crawl(url)
+        title, page, id, meta = jm_crawl_cached(url)
     else:
-        title, page, _, meta = jm_crawl(url)
+        title, page, _, meta = jm_crawl_cached(url)
 
-    embed = discord.Embed(title=title, url=url, color=0xe37e31)
+    # 網址裡沒有相簿 ID 時改用標準網址，翻頁按鈕才讀得到 ID
+    if extract_number_from_url(url) is None:
+        url = f"https://18comic.vip/album/{id}/"
+    embed = discord.Embed(title=title, url=url, color=JM_COLOR)
     embed.set_author(
         name="禁漫天堂", icon_url="https://i.imgur.com/dYVERFN.png")
     for key, name, limit in JM_META_FIELDS:
@@ -137,6 +161,107 @@ def jm_embed(url):
     embed.set_image(url=f"{config.PIC_PROXY_URL}/transform?url={url3}")
 
     return embed
+
+# ---------- 圖床 ----------
+# 原圖網域：cdn-msp.18comic.org 憑證有問題，跟 host 的 REDIRECT_MAP 一樣改走 18comic.vip
+JM_IMAGE_HOST = "https://18comic.vip"
+JM_COLOR = 0xe37e31
+
+
+def jm_gallery(album_id):
+    return f"jm-{album_id}"
+
+
+def jm_source(album_id, page_num):
+    return f"{JM_IMAGE_HOST}/media/photos/{album_id}/{fillnum(page_num)}.webp"
+
+
+def jm_legacy_url(album_id, page_num):
+    """沒有圖床時沿用的 host 轉換網址。"""
+    return f"{config.PIC_PROXY_URL}/transform?url=https://cdn-msp.18comic.org/media/photos/{album_id}/{fillnum(page_num)}.webp"
+
+
+def jm_pieces(album_id, page):
+    """圖片被切成幾條（對應 host.py 的 get_num）：依相簿 ID 與頁碼字串（00001）的 md5 決定。"""
+    e = int(album_id)
+    if e <= 220971:
+        return 1
+    if e >= 268850:
+        n = ord(hashlib.md5(f"{album_id}{page}".encode()).hexdigest()[-1])
+        n %= 8 if e >= 421926 else 10
+        return [2, 4, 6, 8, 10, 12, 14, 16, 18, 20][n]
+    return 10
+
+
+def jm_descramble(album_id, page, data):
+    """還原禁漫的切條打亂（對應 host.py 的 convertImg）：由上往下切成 piece 條，
+    最後一條包含除不盡的餘數，再整個上下反序拼回去。輸出 WEBP。"""
+    from PIL import Image
+    image = Image.open(io.BytesIO(data))
+    image.load()
+    image = image.convert("RGB")
+    piece = jm_pieces(album_id, page)
+    if piece > 1:
+        width, height = image.size
+        block = height // piece
+        strips = []
+        for i in range(piece):
+            top = i * block
+            bottom = height if i == piece - 1 else top + block
+            strips.append(image.crop((0, top, width, bottom)))
+        restored = Image.new("RGB", (width, height))
+        y = 0
+        for strip in reversed(strips):
+            restored.paste(strip, (0, y))
+            y += strip.size[1]
+        image = restored
+    # WEBP（method=0 最快）比 JPEG 小約 35%，上傳較快；編碼約 0.02 秒
+    out = io.BytesIO()
+    image.save(out, "WEBP", quality=80, method=0)
+    return out.getvalue(), ".webp"
+
+
+def jm_transform_for(album_id):
+    return lambda n: (lambda data: jm_descramble(album_id, fillnum(n), data))
+
+
+async def jm_page_image(cdn, album_id, page_num, total=None, thread_hint=None, inline=False):
+    """第 page_num 頁的圖片網址：有圖床就是還原後的 Discord CDN 網址，否則沿用 host 轉換網址。
+    total 有值時背景預載整本。"""
+    async def src_of(n):
+        return jm_source(album_id, n)
+
+    url = await cdn_page_image(cdn, jm_gallery(album_id), page_num, src_of, total,
+                               transform_for=jm_transform_for(album_id), thread_hint=thread_hint,
+                               inline=inline)
+    return url or jm_legacy_url(album_id, page_num)
+
+
+def jm_schedule_prefetch(cdn, album_id, start, total):
+    async def src_of(n):
+        return jm_source(album_id, n)
+    schedule_prefetch(cdn, jm_gallery(album_id), start, total, src_of, jm_transform_for(album_id))
+
+
+async def jm_embed_async(url, cdn=None):
+    """建立禁漫 embed：爬頁面（較慢）與第一頁上傳圖床同時進行，送出時已是 CDN 網址。"""
+    album_id = extract_number_from_url(url)
+    image_task = asyncio.create_task(jm_page_image(cdn, album_id, 1, inline=True)) if album_id else None
+    try:
+        embed = await asyncio.to_thread(jm_embed, url)
+    except Exception:
+        if image_task:
+            image_task.cancel()
+        raise
+    if album_id is None:
+        album_id = extract_number_from_url(embed.url)
+    img = await image_task if image_task else await jm_page_image(cdn, album_id, 1, inline=True)
+    apply_page(embed, img, 1, cdn, jm_gallery(album_id), colour=JM_COLOR)
+    total = total_pages(embed)
+    if total:
+        jm_schedule_prefetch(cdn, album_id, 1, total)
+    return embed
+
 
 def extract_page_number(url: str) -> int:
     from urllib.parse import unquote
@@ -170,96 +295,73 @@ class NumberView3(discord.ui.View):
     def __init__(self, embed: discord.Embed = None):
         super().__init__(timeout=None)
         self.number = 1
-        self.domain = f"{config.PIC_PROXY_URL}/transform?url="
-        self.lock = asyncio.Lock()
         # 舊訊息共用 persistent View，每次操作都從該訊息讀取頁碼。
         if embed is not None:
-            embed_dict = {i.name: i.value for i in embed.fields}
-            num = embed_dict["頁數"]
-            self.middle_button.label = f"{self.number}/{num}"
+            self._sync_number(embed)
+            self.middle_button.label = f"{self.number}/{total_pages(embed)}"
 
     def _sync_number(self, embed: discord.Embed):
+        """頁碼：footer（新版）→ 舊版 host 轉換網址裡的 /00001.webp。"""
+        footer = getattr(embed, "footer", None)
+        if footer and footer.text and footer.text.isdigit():
+            self.number = int(footer.text)
+            return
         self.number = extract_page_number(embed.image.url)
 
-    async def _edit_twice(self, interaction: discord.Interaction, embed: discord.Embed):
-        # Discord 對「編輯訊息換上全新圖片網址」常常第一次抓不到圖(見
-        # discord-api-docs#6540），要再編輯一次同樣內容才會正常顯示，
-        # 這裡直接補一次相同的 edit 來規避。
-        await interaction.message.edit(embed=embed, view=self)
-        await asyncio.sleep(0.9)
-        await interaction.message.edit(embed=embed, view=self)
+    async def _render(self, interaction: discord.Interaction, embed: discord.Embed, target):
+        """翻頁、跳頁共用；舊版 embed（host 轉換網址）會在這裡升級成圖床格式。"""
+        cdn = getattr(interaction.client, "image_cdn", None)
+        album_id = extract_number_from_url(strip_fragment(embed.url))
+        total = total_pages(embed)
+        target = max(1, min(int(target), total)) if total else max(1, int(target))
+        img = await jm_page_image(cdn, album_id, target, total=total, thread_hint=embed_thread_hint(embed),
+                                  inline=True)
+        apply_page(embed, img, target, cdn, jm_gallery(album_id), colour=JM_COLOR)
+        self.number = target
+        self.middle_button.label = f"{target}/{total}"
+        return dict(embed=embed, view=self, attachments=edit_attachments(embed))
+
+    async def _go(self, interaction: discord.Interaction, target_of):
+        embed = interaction.message.embeds[0]
+
+        async def work():
+            async with message_lock(interaction.message.id):
+                self._sync_number(embed)
+                return await self._render(interaction, embed, target_of(self.number, total_pages(embed)))
+
+        await reply_with_edit(interaction, work)
 
     @discord.ui.button(label='<<', style=discord.ButtonStyle.gray, custom_id="21")
     async def decreasetostart(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        id = extract_number_from_url(title)
-
-        async with self.lock:
-            self.number = 1
-            url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-            embed.set_image(url=self.domain + url)
-            self.middle_button.label = f"{self.number}/{num}"
-            await self._edit_twice(interaction, embed)
+        await self._go(interaction, lambda current, total: 1)
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="22")
     async def decrease(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        id = extract_number_from_url(title)
+        await self._go(interaction, lambda current, total: max(1, current - 1))
 
-        async with self.lock:
-            self._sync_number(embed)
-            if self.number > 1:
-                self.number -= 1
-            url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-            embed.set_image(url=self.domain + url)
-            self.middle_button.label = f"{self.number}/{num}"
-            await self._edit_twice(interaction, embed)
-
-    @discord.ui.button(label="-", style=discord.ButtonStyle.gray, disabled=True, custom_id="23")
+    @discord.ui.button(label="-", style=discord.ButtonStyle.primary, custom_id="23")
     async def middle_button(self, interaction: discord.Interaction, button: Button):
-        pass
+        """中間按鈕：開啟跳頁視窗。"""
+        total = total_pages(interaction.message.embeds[0])
+
+        async def on_jump(modal_interaction, target):
+            embed = modal_interaction.message.embeds[0]
+
+            async def work():
+                async with message_lock(modal_interaction.message.id):
+                    return await self._render(modal_interaction, embed, target)
+
+            await reply_with_edit(modal_interaction, work)
+
+        await interaction.response.send_modal(JumpModal(total, on_jump))
 
     @discord.ui.button(label='>', style=discord.ButtonStyle.gray, custom_id="24")
     async def increase(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        id = extract_number_from_url(title)
-
-        async with self.lock:
-            self._sync_number(embed)
-            if self.number + 1 <= int(num):
-                self.number += 1
-            url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-            embed.set_image(url=self.domain + url)
-            self.middle_button.label = f"{self.number}/{num}"
-            await self._edit_twice(interaction, embed)
+        await self._go(interaction, lambda current, total: min(total or current + 1, current + 1))
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="25")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.defer()
-        embed = interaction.message.embeds[0]
-        embed_dict = {i.name: i.value for i in embed.fields}
-        num = embed_dict["頁數"]
-        title = embed.url
-        id = extract_number_from_url(title)
-
-        async with self.lock:
-            self.number = int(num)
-            url = f"https://cdn-msp.18comic.org/media/photos/{id}/{fillnum(self.number)}.webp"
-            embed.set_image(url=self.domain + url)
-            self.middle_button.label = f"{self.number}/{num}"
-            await self._edit_twice(interaction, embed)
+        await self._go(interaction, lambda current, total: total or current)
 
 if __name__ == "__main__":
     url = "https://18comic.vip/album/622529"

@@ -8,75 +8,151 @@ from urllib.parse import urljoin, urlparse
 from discord.ui import Button, View
 import json
 import os
+import time
 import aiohttp
+from utils.ttl_cache import async_ttl_cache
+from functions.cdn_pages import (apply_page as _apply_page, cdn_page_image, embed_thread_hint,
+                                 total_pages as _total_pages, JumpModal, reply_with_edit,
+                                 message_lock, edit_attachments)
 
 
 AID_PATTERN = re.compile(r"aid-(\d+)\.html")
+GALLERY_IMG_PATTERN = re.compile(r'url: fast_img_host\+\\"([^"\\]+)')
+
+
+def cdn_gallery(digit):
+    return f"wnacg-{digit}"
+
+
+def cdn_key(digit, page_num):
+    return f"wnacg-{digit}-{int(page_num)}"
+
+
+WNACG_COLOR = 0x3498db
+
+
+def apply_page(embed: discord.Embed, img, page_num, cdn=None, digit=None):
+    _apply_page(embed, img, page_num, cdn, cdn_gallery(digit) if digit else None, colour=WNACG_COLOR)
+
+
+@async_ttl_cache(ttl_seconds=1800, maxsize=128, key_arg="digit")
+async def fetch_gallery_images(session: aiohttp.ClientSession, digit):
+    """一次取得整本所有頁面的原圖網址（已帶 verify 參數）。
+    photos-gallery-aid-*.html 是閱讀模式用的 JS，裡面的 imglist 列出每一頁；
+    最後一筆是站方的收藏廣告圖（不在 /data/ 底下），要濾掉。"""
+    url = f"https://www.wnacg.com/photos-gallery-aid-{digit}.html"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"}
+    async with session.get(url, headers=headers) as response:
+        response.raise_for_status()
+        text = await response.text()
+    images = []
+    for src in GALLERY_IMG_PATTERN.findall(text):
+        if "/data/" not in src:
+            continue
+        images.append("https:" + src if src.startswith("//") else src)
+    if not images:
+        raise RuntimeError(f"wnacg gallery {digit} has no images")
+    return images
+
+
+async def get_page_image(session: aiohttp.ClientSession, cdn, digit, page_num, page=None, thread_hint=None,
+                         inline=False, first_src=None):
+    """取得某一頁要放進 embed 的圖片網址：有圖床就是 Discord CDN 網址（並背景預載整本），
+    沒有圖床或上傳失敗時退回原站網址。thread_hint 是 embed 上記錄的討論串 ID；
+    first_src 是已經知道的該頁原圖網址（單頁連結），有的話不必先等整本清單。"""
+    digit = str(digit)
+
+    async def src_of(n):
+        if first_src and n == int(page_num):
+            return first_src
+        try:
+            return (await fetch_gallery_images(session, digit))[n - 1]
+        except Exception as e:
+            print(f"[wnacg] gallery list {digit} failed, fallback to view page: {e!r}", flush=True)
+            return await find_img_new(session, digit, page, page_num=n)
+
+    async def total():
+        return len(await fetch_gallery_images(session, digit))
+
+    url = await cdn_page_image(cdn, cdn_gallery(digit), page_num, src_of, total, thread_hint=thread_hint,
+                               inline=inline)
+    return url or await src_of(int(page_num))
+
 
 async def wnacg_crawl(session: aiohttp.ClientSession, digit):
-    url = f"https://www.wnacg.com/photos-index-page-1-aid-{digit}.html"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
-    }
-
+    """相簿資訊；同一本 30 分鐘內重貼不再重爬。失敗回傳 404（失敗結果不快取）。"""
     try:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                return 404
-            html = await response.text()
-            soup = BeautifulSoup(html, 'html.parser')
-            
-            info = soup.find('div', {"class": "asTBcell uwconn"})
-            title = soup.find("div", {"class": "userwrap"})
-            
-            # 簡化標題提取邏輯
-            for item in title:
-                if isinstance(item, NavigableString):
-                    if str(item) == "\n":
-                        continue
-                    else:
-                        title = str(item)
-                        break
-                if item.text == "\n":
-                    continue
-                else:
-                    title = item.text
-                    break
-            
-            link_div = soup.find("div", {"class": "pic_box tb"})
-            href = link_div.find('a').get('href')
-            link = "https://www.wnacg.com/" + href
-
-            # 提取縮圖
-            if "//" not in soup.find_all('img')[2].get('src')[2:]:
-                thumbnail = "https://" + soup.find_all('img')[2].get('src')[2:]
-            else:
-                thumbnail = "https:" + soup.find_all('img')[2].get('src')[2:]
-
-            # 提取頁數與標籤
-            page = "0"
-            tag_lst = []
-            info_text = info.get_text()
-            if "頁數" in info_text:
-                # 簡單正則提取數字
-                page_match = re.search(r'頁數：(\d+)P', info_text)
-                page = page_match.group(1) if page_match else "0"
-            
-            tags = info.find_all('a', href=re.compile(r"index-tag"))
-            tag_lst = [t.get_text() for t in tags]
-
-            return title, thumbnail, page, tag_lst, link
+        return await _wnacg_crawl_cached(session, str(digit))
     except Exception as e:
         print(f"Crawl error: {e}")
         return 404
 
 
-async def create_wnacg_embed(session: aiohttp.ClientSession, digit, page_num=1):
+@async_ttl_cache(ttl_seconds=1800, maxsize=256, key_arg="digit")
+async def _wnacg_crawl_cached(session: aiohttp.ClientSession, digit):
+    url = f"https://www.wnacg.com/photos-index-page-1-aid-{digit}.html"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.61 Safari/537.36"
+    }
+
+    async with session.get(url, headers=headers) as response:
+        if response.status != 200:
+            raise RuntimeError(f"HTTP {response.status}")
+        html = await response.text()
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        info = soup.find('div', {"class": "asTBcell uwconn"})
+        title = soup.find("div", {"class": "userwrap"})
+        
+        # 簡化標題提取邏輯
+        for item in title:
+            if isinstance(item, NavigableString):
+                if str(item) == "\n":
+                    continue
+                else:
+                    title = str(item)
+                    break
+            if item.text == "\n":
+                continue
+            else:
+                title = item.text
+                break
+        
+        link_div = soup.find("div", {"class": "pic_box tb"})
+        href = link_div.find('a').get('href')
+        link = "https://www.wnacg.com/" + href
+
+        # 提取縮圖
+        if "//" not in soup.find_all('img')[2].get('src')[2:]:
+            thumbnail = "https://" + soup.find_all('img')[2].get('src')[2:]
+        else:
+            thumbnail = "https:" + soup.find_all('img')[2].get('src')[2:]
+
+        # 提取頁數與標籤
+        page = "0"
+        tag_lst = []
+        info_text = info.get_text()
+        if "頁數" in info_text:
+            # 簡單正則提取數字
+            page_match = re.search(r'頁數：(\d+)P', info_text)
+            page = page_match.group(1) if page_match else "0"
+        
+        tags = info.find_all('a', href=re.compile(r"index-tag"))
+        tag_lst = [t.get_text() for t in tags]
+
+        return title, thumbnail, page, tag_lst, link
+
+
+async def create_wnacg_embed(session: aiohttp.ClientSession, digit, page_num=1, cdn=None, first_src=None):
     url = f"https://www.wnacg.com/photos-index-page-1-aid-{digit}.html"
 
-    # 呼叫異步版的爬蟲函數
+    # 相簿資訊與目標頁圖片同時處理，圖床上傳不會疊加在爬蟲時間之後
+    requested = max(1, int(page_num))
+    image_task = asyncio.create_task(get_page_image(session, cdn, digit, requested, page=None, inline=True,
+                                                    first_src=first_src))
     result = await wnacg_crawl(session, digit)
     if result == 404:
+        image_task.cancel()
         return 404
 
     title, thumbnail, page, tag_lst, link = result
@@ -86,13 +162,17 @@ async def create_wnacg_embed(session: aiohttp.ClientSession, digit, page_num=1):
     if page and page.isdigit():
         page_num = max(1, min(page_num, int(page)))
 
-    embed = discord.Embed(title=title, url=url, color=0x3498db)
+    embed = discord.Embed(title=title, url=url, color=WNACG_COLOR)
     embed.set_thumbnail(url=thumbnail)
 
-    img = await find_img_new(session, digit, page, page_num=page_num)
+    if page_num == requested:
+        img = await image_task
+    else:
+        # 頁碼超出範圍被校正，改抓校正後的那一頁
+        image_task.cancel()
+        img = await get_page_image(session, cdn, digit, page_num, page=page, inline=True)
 
-    embed.set_image(url=img)
-    embed.set_footer(text=str(page_num))  # 記錄目前頁碼，供翻頁按鈕讀取
+    apply_page(embed, img, page_num, cdn, digit)
 
     if tag_lst:
         embed.add_field(name="標籤", value=",".join(tag_lst))
@@ -105,7 +185,7 @@ async def create_wnacg_embed(session: aiohttp.ClientSession, digit, page_num=1):
 
 async def resolve_wnacg_view(session: aiohttp.ClientSession, view_id):
     """給定單頁瀏覽連結 (photos-view-id-*.html) 的 view id，反查其所屬相簿的
-    aid 與該頁的頁碼。view id 是每一頁各自獨立的編號，跟 aid 沒有規律可推算，
+    aid、該頁的頁碼與原圖網址。view id 是每一頁各自獨立的編號，跟 aid 沒有規律可推算，
     只能從頁面本身的麵包屑連結（找 aid）與頁碼標籤（找頁碼）反查。
     找不到（例如連結失效）時回傳 None。"""
     url = f"https://www.wnacg.com/photos-view-id-{view_id}.html"
@@ -132,7 +212,13 @@ async def resolve_wnacg_view(session: aiohttp.ClientSession, view_id):
     page_label = soup.find("span", {"class": "newpagelabel"})
     page_num = int(page_label.find("b").text) if page_label else 1
 
-    return digit, page_num
+    # 這一頁本身就有帶 verify 的原圖網址，直接拿來上傳，不必等整本清單
+    img = soup.find("img", {"id": "picarea"})
+    img_src = img.get("src") if img else None
+    if img_src and img_src.startswith("//"):
+        img_src = "https:" + img_src
+
+    return digit, page_num, img_src
 
 
 async def find_img_new(session: aiohttp.ClientSession, digit, page, page_num=1):
@@ -240,164 +326,83 @@ def get_current_page(embed: discord.Embed) -> int:
         return 1
 
 
+async def render_wnacg_page(interaction: discord.Interaction, view, embed: discord.Embed, target):
+    """翻頁、跳頁共用：取得目標頁圖片並更新 embed，回傳編輯訊息用的參數。
+    舊版 embed（圖片是原站網址、沒有圖床索引）也會在這裡被升級成新格式。"""
+    cdn = getattr(interaction.client, "image_cdn", None)
+    digit = AID_PATTERN.search(embed.url).group(1)
+    total = _total_pages(embed)
+    target = max(1, int(target))
+    if total:
+        target = min(target, total)
+
+    img = await get_page_image(view.session, cdn, digit, target, page=total,
+                               thread_hint=embed_thread_hint(embed), inline=True)
+    apply_page(embed, img, target, cdn, digit)
+
+    view.number = target
+    view._page_synced = True
+    view.middle_button.label = f"{target}/{total}"
+    # 這頁還沒上圖床就直接附在訊息上；否則清掉先前附在訊息上的圖
+    return dict(embed=embed, view=view, attachments=edit_attachments(embed))
+
+
 class NumberView2(View):
-    def __init__(self,session: aiohttp.ClientSession, embed:discord.Embed=None):
+    def __init__(self, session: aiohttp.ClientSession, embed: discord.Embed = None):
         super().__init__(timeout=None)
-        # self.message = message
         self.number = 1
         self.session = session
-        self.lock = asyncio.Lock()
-        # 是否已經從訊息上的 embed 同步過目前頁碼；重開機後 View 會是全新的實例，
-        # self.number 預設的 1 不可靠，第一次按按鈕時要用 get_current_page 校正一次。
         self._page_synced = False
 
-        if embed != None:
-            embed_dict = {i.name: i.value for i in embed.fields}
-            num = embed_dict["頁數"]
-
-            # embed 可能不是從第 1 頁開始（例如從 photos-view-id 連結建立），
-            # 用 footer 記錄的頁碼校正，而不是寫死 1
+        if embed is not None:
+            # embed 可能不是從第 1 頁開始（例如從 photos-view-id 連結建立），用 footer 校正
             self.number = get_current_page(embed)
             self._page_synced = True
+            self.middle_button.label = f"{self.number}/{_total_pages(embed)}"
 
-            # 設置中間按鈕的標籤
-            self.middle_button.label = f"{self.number}/{num}"
+    # 頁碼一律讀這則訊息 embed 上的 footer：重開機後所有 wnacg 訊息共用 bot.py 註冊的
+    # 同一個 View 實例，self.number 會被別則訊息改掉，不能拿來當目前頁。
+    async def _go(self, interaction: discord.Interaction, target_of):
+        embed = interaction.message.embeds[0]
 
-    async def _edit_twice(self, interaction: discord.Interaction, embed: discord.Embed):
-        # Discord 對「編輯訊息換上全新圖片網址」常常第一次抓不到圖(見
-        # discord-api-docs#6540），要再編輯一次同樣內容才會正常顯示，
-        # 這裡直接補一次相同的 edit 來規避。
-        await interaction.message.edit(embed=embed, view=self)
-        await asyncio.sleep(0.5)
-        await interaction.message.edit(embed=embed, view=self)
+        async def work():
+            async with message_lock(interaction.message.id):
+                current = get_current_page(embed)
+                return await render_wnacg_page(interaction, self, embed, target_of(current, _total_pages(embed)))
 
+        await reply_with_edit(interaction, work)
 
     @discord.ui.button(label='<<', style=discord.ButtonStyle.gray, custom_id="0000")
     async def decreasetostart(self, interaction: discord.Interaction, button: Button):
-        embed = interaction.message.embeds[0]
-        digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
-
-        for item in embed.fields:
-            if item.name == "頁數":
-                page = item.value
-
-        await interaction.response.defer()
-
-        async with self.lock:
-            img = await find_img_new(self.session, digit=digit, page=page, page_num=1)
-
-            embed.set_image(url=img)
-            embed.set_footer(text="1")
-
-            self.number = 1
-            self._page_synced = True
-            self.middle_button.label = f"1/{page}"
-
-            await self._edit_twice(interaction, embed)
+        await self._go(interaction, lambda current, total: 1)
 
     @discord.ui.button(label='<', style=discord.ButtonStyle.gray, custom_id="1111")
     async def decrease(self, interaction: discord.Interaction, button: Button):
-        embed = interaction.message.embeds[0]
-        digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
+        await self._go(interaction, lambda current, total: max(1, current - 1))
 
-        for item in embed.fields:
-            if item.name == "頁數":
-                page = item.value
-
-        await interaction.response.defer()
-
-        async with self.lock:
-            self.number = get_current_page(embed)
-            current = self.number
-            num = current - 1 if current - 1 > 0 else current
-
-            img = await find_img_new(self.session, digit=digit, page=page, page_num=num)
-
-            embed.set_image(url=img)
-            embed.set_footer(text=str(num))
-
-            self.number = num
-            self.middle_button.label = f"{num}/{page}"
-
-            await self._edit_twice(interaction, embed)
-
-    @discord.ui.button(label="-", emoji="🔄", style=discord.ButtonStyle.gray, custom_id="2222")
+    @discord.ui.button(label="-", style=discord.ButtonStyle.primary, custom_id="2222")
     async def middle_button(self, interaction: discord.Interaction, button: Button):
-        """重新整理目前頁面：wnacg 的圖片網址帶有時效性的 verify 參數，
-        大約一天左右就會過期；按這顆按鈕會重新爬取目前頁碼、換上新的有效連結。"""
-        embed = interaction.message.embeds[0]
-        digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
+        """中間按鈕：開啟跳頁視窗（custom_id 沿用舊版重新整理鈕，舊訊息也能用）。"""
+        total = _total_pages(interaction.message.embeds[0])
 
-        for item in embed.fields:
-            if item.name == "頁數":
-                page = item.value
+        async def on_jump(modal_interaction, target):
+            embed = modal_interaction.message.embeds[0]
 
-        await interaction.response.defer()
+            async def work():
+                async with message_lock(modal_interaction.message.id):
+                    return await render_wnacg_page(modal_interaction, self, embed, target)
 
-        async with self.lock:
-            # 直接讀這則 embed 上記錄的頁碼，不能用 self.number：
-            # 重開機後所有 wnacg 訊息共用 bot.py 註冊的同一個 View 實例，
-            # self.number 會被別則訊息改掉，重整時就跳到別人的頁數。
-            self.number = get_current_page(embed)
-            current = self.number
+            await reply_with_edit(modal_interaction, work)
 
-            img = await find_img_new(self.session, digit=digit, page=page, page_num=current)
-
-            embed.set_image(url=img)
-            embed.set_footer(text=str(current))
-
-            self.middle_button.label = f"{current}/{page}"
-
-            await self._edit_twice(interaction, embed)
+        await interaction.response.send_modal(JumpModal(total, on_jump))
 
     @discord.ui.button(label='>', style=discord.ButtonStyle.gray, custom_id="3333")
     async def increase(self, interaction: discord.Interaction, button: Button):
-        embed = interaction.message.embeds[0]
-        digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
-
-        for item in embed.fields:
-            if item.name == "頁數":
-                page = item.value
-
-        await interaction.response.defer()
-
-        async with self.lock:
-            self.number = get_current_page(embed)
-            current = self.number
-            num = current + 1 if current + 1 <= int(page) else current
-
-            img = await find_img_new(self.session, digit=digit, page=page, page_num=num)
-
-            embed.set_image(url=img)
-            embed.set_footer(text=str(num))
-
-            self.number = num
-            self.middle_button.label = f"{num}/{page}"
-
-            await self._edit_twice(interaction, embed)
+        await self._go(interaction, lambda current, total: min(total or current + 1, current + 1))
 
     @discord.ui.button(label='>>', style=discord.ButtonStyle.gray, custom_id="4444")
     async def increasetoend(self, interaction: discord.Interaction, button: Button):
-        embed = interaction.message.embeds[0]
-        digit = re.search(r"aid-(\d+)\.html", embed.url).group(1)
-
-        for item in embed.fields:
-            if item.name == "頁數":
-                page = item.value
-
-        await interaction.response.defer()
-
-        async with self.lock:
-            img = await find_img_new(self.session, digit=digit, page=page, page_num=page)
-
-            embed.set_image(url=img)
-            embed.set_footer(text=str(page))
-
-            self.number = int(page)
-            self._page_synced = True
-            self.middle_button.label = f"{page}/{page}"
-
-            await self._edit_twice(interaction, embed)
+        await self._go(interaction, lambda current, total: total or current)
 
 
 if __name__ == "__main__":

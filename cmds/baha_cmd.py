@@ -12,6 +12,8 @@ from discord.app_commands import Choice
 
 class Embed開關指令(Cog_Extension):
     @app_commands.command(name="解析網頁開關", description="開關伺服器是否解析網址")
+    @app_commands.default_permissions(manage_guild=True)
+    @app_commands.guild_only()
     @app_commands.describe(website="選擇網站")
     @app_commands.choices(
         website=[

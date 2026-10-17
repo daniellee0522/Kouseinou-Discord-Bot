@@ -8,7 +8,8 @@ from bs4 import BeautifulSoup
 # 導入你原本在 functions 中的解析函數
 from functions.embed_permission import is_embed_ban
 from functions.slot import Gacha, check_lock, block_check
-from functions.jm import jm_embed, NumberView3
+from functions.jm import jm_embed_async, NumberView3
+from functions.cdn_pages import cdn_files
 from functions.xvideo import xvideo_embed
 from functions.wnacg import create_wnacg_embed, resolve_wnacg_view, NumberView2
 from functions.nhentai import test_embed, NumberView
@@ -158,25 +159,25 @@ class Events(commands.Cog):
     # --- 各個網址的處理邏輯 ---
     async def handler_jm(self, message, url, match):
         # await message.channel.send(f"偵測到 JM 網址: {url}")
-        if is_embed_ban(server_id=message.channel.id, arg="jm"):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="jm"):
             return
         url = url.replace("/photo", "/album")
-        embed = await asyncio.to_thread(jm_embed, url)
+        embed = await jm_embed_async(url, cdn=getattr(self.bot, 'image_cdn', None))
         view = NumberView3(embed=embed)
-        await message.channel.send(embed=embed, view=view)
+        await message.channel.send(embed=embed, view=view, **cdn_files(embed))
         await message.edit(suppress=True)
 
 
     async def handler_wnacg(self, message, url, match):
         if self.is_nsfw_channel(message.channel) is False:
             return
-        if is_embed_ban(server_id=message.channel.id, arg="wn"):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="wn"):
             return
         content_id = match.group(2)
-        embed = await create_wnacg_embed(self.bot.session, content_id)
+        embed = await create_wnacg_embed(self.bot.session, content_id, cdn=getattr(self.bot, 'image_cdn', None))
         if embed not in [404, 403]:
             view = NumberView2(session=self.bot.session, embed=embed)
-            await message.channel.send(embed=embed, view=view)
+            await message.channel.send(embed=embed, view=view, **cdn_files(embed))
             await message.edit(suppress=True)
 
 
@@ -185,17 +186,18 @@ class Events(commands.Cog):
             return
         # photos-view-id-*.html 是單頁瀏覽連結，view id 跟相簿的 aid 無關，
         # 需要先進去該頁面反查所屬的 aid 與頁碼，才能組出跟 handler_wnacg 一樣的 embed
-        if is_embed_ban(server_id=message.channel.id, arg="wn"):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="wn"):
             return
         view_id = match.group(2)
         resolved = await resolve_wnacg_view(self.bot.session, view_id)
         if resolved is None:
             return
-        digit, page_num = resolved
-        embed = await create_wnacg_embed(self.bot.session, digit, page_num=page_num)
+        digit, page_num, page_src = resolved
+        embed = await create_wnacg_embed(self.bot.session, digit, page_num=page_num, cdn=getattr(self.bot, 'image_cdn', None),
+                                         first_src=page_src)
         if embed not in [404, 403]:
             view = NumberView2(session=self.bot.session, embed=embed)
-            await message.channel.send(embed=embed, view=view)
+            await message.channel.send(embed=embed, view=view, **cdn_files(embed))
             try:
                 await message.edit(suppress=True)
             except discord.Forbidden:
@@ -204,19 +206,20 @@ class Events(commands.Cog):
     async def handler_nhentai(self, message, url, match):
         if self.is_nsfw_channel(message.channel) is False:
             return
-        if is_embed_ban(server_id=message.channel.id, arg="nh"):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="nh"):
             return
         content_id = match.group(1)
-        embed = await test_embed(session=self.bot.session, sec5h=self.bot.missav_crawl, digit=content_id, cf_clearance="", csrftoken="")
+        embed = await test_embed(session=self.bot.session, sec5h=self.bot.missav_crawl, digit=content_id, cf_clearance="", csrftoken="",
+                                 cdn=getattr(self.bot, 'image_cdn', None))
         view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
         if embed:
-            await message.channel.send(embed=embed, view=view)
+            await message.channel.send(embed=embed, view=view, **cdn_files(embed))
             await message.edit(suppress=True)
 
     async def handler_xvideo(self, message, url, match):
         if self.is_nsfw_channel(message.channel) is False:
             return
-        if is_embed_ban(server_id=message.channel.id, arg="andy"):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="andy"):
             return
         embed, video_url = await asyncio.to_thread(xvideo_embed, url)
         if embed:
@@ -273,7 +276,7 @@ class Events(commands.Cog):
 
     async def handler_baha(self, message, url, match):
         # await message.channel.send(url)
-        if is_embed_ban(server_id=message.channel.id, arg="baha"):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="baha"):
             return
         bsn = match.group(1)
         if bsn != "60076":
@@ -288,10 +291,15 @@ class Events(commands.Cog):
     async def handler_facebook(self, message, url, match):
         if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="fb"):
             return
-        data = await get_facebook_data(url)
-        if data:
-            post_text = data.get("post_text") or ""
-            embed = discord.Embed(title=data.get("title"), url=url, description=post_text)
+        try:
+            data = await asyncio.wait_for(get_facebook_data(url), timeout=60)
+        except Exception as e:
+            print(f"[facebook] {url} failed: {e!r}", flush=True)
+            return
+        print(f"[facebook] {url} -> title={data.get('title')!r} video={bool(data.get('video'))} text={bool(data.get('post_text'))} final={data.get('url')}", flush=True)
+        if data and any(data.get(k) for k in ("title", "post_text", "video", "image", "images")):
+            post_text = (data.get("post_text") or "")[:4000]
+            embed = discord.Embed(title=(data.get("title") or "")[:256] or None, url=url, description=post_text)
             if data.get("views"):
                 embed.add_field(name="觀看次數", value=data["views"], inline=True)
             images = data.get("images", [])
