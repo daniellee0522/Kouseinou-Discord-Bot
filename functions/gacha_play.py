@@ -20,7 +20,7 @@ GACHA_COLOR = 0x3498DB
 # 舊格式的卡池（不是 ba_<學生 ID> 表情）抽到 PU 時貼的影片
 LEGACY_PU_VIDEO = "https://cdn.discordapp.com/attachments/1149330986279108689/1171035321736110100/6bd4b9604ac8b986.mp4"
 # 九張 R＋一張 SR 時附的圖
-ALL_R_IMAGE = "https://media1.tenor.com/m/Yo7MG1aUbOgAAAAd/9%E8%97%8D1%E9%87%91.gif"  # 9藍1金.gif
+ALL_R_IMAGE = "https://media.tenor.com/Yo7MG1aUbOgAAAAd/tenor.gif"  # 9藍1金；media1.tenor.com/m/ 的網址 HEAD 會 404，Discord 顯示不出來
 
 
 async def _pu_embed(bot, pu):
