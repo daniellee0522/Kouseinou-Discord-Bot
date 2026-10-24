@@ -51,6 +51,8 @@ Failed video lookups return a result or error message; there is no persistent ba
 - Automatic previews for wnacg (including single-page links), nhentai, E-Hentai / ExHentai, hitomi, kemono / coomer, Hanime1, Iwara, XVideos, and Pornhub require an age-restricted server channel. Threads use the parent channel's setting. This check does not block DMs, and it is not applied to 禁漫天堂, MissAV, Jable, or Supjav links. Among slash commands, only `/ehentai` checks for an age-restricted channel (it also works in DMs).
 - `/解析網頁開關` saves per server. MissAV, Jable, Supjav, and Pornhub previews do not have a switch yet.
 
+<img src="docs/images/link-previews.png" width="560" alt="Bahamut, Facebook and Mobile01 link previews">
+
 <img src="docs/images/gallery-preview.png" width="600" alt="Gallery preview with page buttons">
 
 ### Anime update notifications
@@ -70,6 +72,8 @@ The bot checks subscribed shows around their scheduled update times and posts ne
 
 <img src="docs/images/anime-list.png" width="580" alt="Anime list">
 
+<img src="docs/images/anime-search.png" width="500" alt="Anime search with subscribe button">
+
 <img src="docs/images/anime-subscribe.png" width="420" alt="Anime subscription">
 
 <img src="docs/images/anime-notification.png" width="560" alt="New episode notification">
@@ -83,7 +87,8 @@ The rate-up banner follows the Blue Archive Global server automatically: the bot
 - `/統計` shows your results; `/歸零` resets your statistics.
 - `/上鎖` and `/解鎖` control whether the simulator can be used in a channel, subject to the commands' permission checks.
 
-<img src="docs/images/gacha-result.png" width="520" alt="Gacha ten-pull result">
+<img src="docs/images/gacha-result.png" width="460" alt="Gacha ten-pull result">
+<img src="docs/images/gacha-pu.png" width="460" alt="Rate-up student pulled">
 ![Gacha statistics](https://i.imgur.com/X5b6jFl.png)
 
 ### Welcome messages
