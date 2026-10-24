@@ -45,14 +45,11 @@ Failed video lookups return a result or error message; there is no persistent ba
 - Automatic previews for wnacg (including single-page links), nhentai, E-Hentai / ExHentai, hitomi, kemono / coomer, Hanime1, Iwara, XVideos, and Pornhub require an age-restricted server channel. Threads use the parent channel's setting. This check does not block DMs, and it is not applied to 禁漫天堂, MissAV, Jable, or Supjav links. Among slash commands, only `/ehentai` is limited to age-restricted channels.
 - `/解析網頁開關` saves per server. MissAV, Jable, Supjav, and Pornhub previews do not have a switch yet.
 
-<details>
-<summary>Gallery preview examples</summary>
-
 ![Gallery preview](https://i.imgur.com/07vfj6h.png)
-![Gallery preview with navigation](https://i.imgur.com/eU74DDa.png)
-![Gallery preview example](https://i.imgur.com/YJMhBa4.png)
 
-</details>
+![Gallery preview with navigation](https://i.imgur.com/eU74DDa.png)
+
+![Gallery preview example](https://i.imgur.com/YJMhBa4.png)
 
 ### Anime update notifications
 
@@ -69,14 +66,11 @@ Subscriptions and the notification channel are configured per server.
 
 The bot checks subscribed shows around their scheduled update times and posts new-episode notifications. This feature does not require Server Members Intent.
 
-<details>
-<summary>Anime notification examples</summary>
-
 ![Anime list](https://i.imgur.com/B5oBv5V.png)
-![Anime subscription](https://i.imgur.com/1pm5vhR.png)
-![New episode notification](https://i.imgur.com/cCWWAat.png)
 
-</details>
+![Anime subscription](https://i.imgur.com/1pm5vhR.png)
+
+![New episode notification](https://i.imgur.com/cCWWAat.png)
 
 ### Gacha simulator
 
@@ -184,6 +178,10 @@ The optional 地牛 Wake UP! integration is not available in the public bot and 
 - `cmds/EarthQuakeWake.py` reads and resets `data/test.json` and reads destination channel IDs from `data/alert.json`.
 
 Before enabling it, make the producer and consumer use the same file, configure the executable's working directory, prepare destination channels, and verify the complete notification flow. Compiling `main.cpp` alone does not resolve this mismatch.
+
+In 地牛 Wake UP!, the collaboration directory is set under `setting > others`:
+
+![地牛 Wake UP! collaboration setting](https://i.imgur.com/z1Kxj6T.png)
 
 ![Earthquake notification example](https://i.imgur.com/V7VxXmL.png)
 
