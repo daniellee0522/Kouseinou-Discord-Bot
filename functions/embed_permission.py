@@ -1,5 +1,6 @@
 import json
 import config
+from utils.json_cache import load_json_cached
 
 
 def change_permission(server_id, arg):
@@ -37,17 +38,5 @@ def change_permission(server_id, arg):
 
 
 def is_embed_ban(server_id, arg):
-    server_id = str(server_id)
-    with open(config.DATA_DIR / 'embed_permission.json', 'r', encoding='utf8') as f:
-        data = json.load(f)
-    if server_id in data.keys():
-        if arg in data[server_id]:
-            if data[server_id][arg] == 1:
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    else:
-        return False
+    data = load_json_cached(config.DATA_DIR / 'embed_permission.json', {})
+    return data.get(str(server_id), {}).get(arg) == 1

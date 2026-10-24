@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 
 _base = Path(__file__).parent
+BASE_DIR = _base
 DATA_DIR = _base / 'data'
+# host.py 的 /server_count 讀這個檔
+SERVER_COUNT_FILE = _base / 'server_count.json'
 
 try:
     with open(DATA_DIR / 'token.json', 'r', encoding='utf8') as _f:

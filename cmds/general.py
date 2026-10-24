@@ -29,6 +29,11 @@ HELP_SECTIONS = {
         "color": 0x3498DB,
         "author": {"name": "ブルーアーカイブ", "icon_url": "https://i.imgur.com/R1bu6V6.jpg"},
     },
+    "Bookmark": {
+        "title": "書籤指令",
+        "description": "對本子預覽按右鍵 → 應用程式 → **加入書籤**，機器人會把目前那頁私訊給你；在私訊裡繼續翻頁，書籤就停在最新頁。書籤只存在你的私訊裡。",
+        "color": 0xF1C40F,
+    },
     "Embed開關指令": {
         "title": "網址解析開關",
         "description": "開關本伺服器是否自動解析特定網站的網址（需要管理伺服器權限）。",
@@ -53,6 +58,9 @@ class 通用指令(Cog_Extension):
             callback=self.delete_message
         )
         self.bot.tree.add_command(self.delete_menu)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.delete_menu.name, type=self.delete_menu.type)
 
     @commands.command(name="ping")
     async def ping(self, ctx):
@@ -139,7 +147,8 @@ class 通用指令(Cog_Extension):
                 embed.set_author(**section["author"])
 
             for cmd in cog.walk_app_commands():
-                if cmd.name in HIDDEN_COMMANDS or len(embed.fields) >= 25:
+                # 指令群組本身不列，只列底下的子指令
+                if isinstance(cmd, app_commands.Group) or cmd.name in HIDDEN_COMMANDS or len(embed.fields) >= 25:
                     continue
                 params = " ".join(f"<{p.display_name}>" if p.required else f"[{p.display_name}]" for p in cmd.parameters)
                 name = mentions.get(cmd.qualified_name, f"/{cmd.qualified_name}")
@@ -156,7 +165,7 @@ class 通用指令(Cog_Extension):
         if is_nsfw:
             auto.add_field(name="NSFW", value="nhentai、wnacg、禁漫天堂、E-Hentai、ExHentai、kemono、coomer、hitomi、missav、jable、supjav、hanime1、iwara、xvideos、pornhub", inline=False)
         auto.add_field(name="右鍵選單（應用程式）",
-                       value="**刪除訊息**：刪除此機器人的訊息\n**跳轉頁數**：在本子預覽中跳到指定頁", inline=False)
+                       value="**刪除訊息**：刪除此機器人的訊息\n**跳轉頁數**：在本子預覽中跳到指定頁\n**加入書籤**：把本子預覽目前那頁私訊給你", inline=False)
         embeds.append(auto)
 
         await interaction.followup.send(embeds=embeds[:10], ephemeral=True)

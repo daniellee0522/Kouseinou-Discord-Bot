@@ -21,7 +21,8 @@ class FacebookEmbedTests(unittest.IsolatedAsyncioTestCase):
                      'is_embed_ban': Mock(return_value=False)}
         exec(compile(ast.Module(body=[handler], type_ignores=[]), str(source), 'exec'), namespace)
         message = SimpleNamespace(guild=SimpleNamespace(id=123), channel=SimpleNamespace(send=AsyncMock()), edit=AsyncMock())
-        await namespace['handler_facebook'](None, message, 'https://www.facebook.com/example/posts/123', None)
+        cog = SimpleNamespace(_suppress=lambda m: m.edit(suppress=True))
+        await namespace['handler_facebook'](cog, message, 'https://www.facebook.com/example/posts/123', None)
         message.channel.send.assert_awaited_once()
         message.edit.assert_awaited_once_with(suppress=True)
         return message.channel.send.call_args.kwargs

@@ -12,6 +12,8 @@ def judge_valid_missav_url(url_content):
     title = soup.find('meta', attrs={'property': 'og:title'})
     main_content = parse_main_content(url_content)
 
+    if title is None:
+        return False
     if "MissAV | 免費高清AV在線看" == title['content']:
         if main_content:
             if "找不到頁面" in main_content or "404" in main_content:

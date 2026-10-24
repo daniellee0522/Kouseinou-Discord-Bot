@@ -28,7 +28,7 @@ Facebook previews support post text and up to four attached photos. Video links 
 | `/nhentai` | Look up a gallery by ID. |
 | `/wnacg` | Look up an album by ID. |
 | `/jm` | Look up a 禁漫天堂 album by ID. |
-| `/ehentai` | Look up an E-Hentai / ExHentai gallery by link (gallery or single-page) or `gid token`. NSFW channels only. |
+| `/ehentai` | Look up an E-Hentai / ExHentai gallery by number, link (gallery or single-page), or `gid token`. A number alone can't find deleted galleries. NSFW channels only. |
 | `/av番號查詢` | Search by video code, preferring MissAV, then Jable, then Supjav. |
 | `/missav` | Look up a video on MissAV only. |
 | `/jable` | Look up a video on Jable only. |
@@ -37,12 +37,14 @@ Facebook previews support post text and up to four attached photos. Video links 
 
 Gallery messages (nhentai, wnacg, 禁漫天堂, E-Hentai / ExHentai, hitomi, and multi-image kemono / coomer posts) have first/previous/next/last-page buttons. Use the message context menu **Apps → 跳轉頁數** to jump to a specific page. On wnacg previews, the middle refresh button fetches a fresh image URL when an old link expires; single-page wnacg links also resolve to their album and page.
 
+**Bookmarks:** right-click a gallery preview → **Apps → 加入書籤** and the bot DMs you that page with working page buttons; keep reading in the DM and the bookmark stays on your latest page. Bookmarking the same gallery again replaces the old one. `/書籤 列表` lists your bookmarks (optionally filtered by site), `/書籤 新增` adds one from a message link, and each bookmark in the list has its own delete button. Bookmarks are only the bot's messages in your DMs; nothing is stored on the bot's host, and you need to allow DMs from server members.
+
 Failed video lookups return a result or error message; there is no persistent background retry queue.
 
 **Current limitations:**
 
 - Automatic link detection needs Message Content Intent. Direct slash-command lookups provide a separate way to request previews.
-- Automatic previews for wnacg (including single-page links), nhentai, E-Hentai / ExHentai, hitomi, kemono / coomer, Hanime1, Iwara, XVideos, and Pornhub require an age-restricted server channel. Threads use the parent channel's setting. This check does not block DMs, and it is not applied to 禁漫天堂, MissAV, Jable, or Supjav links. Among slash commands, only `/ehentai` is limited to age-restricted channels.
+- Automatic previews for wnacg (including single-page links), nhentai, E-Hentai / ExHentai, hitomi, kemono / coomer, Hanime1, Iwara, XVideos, and Pornhub require an age-restricted server channel. Threads use the parent channel's setting. This check does not block DMs, and it is not applied to 禁漫天堂, MissAV, Jable, or Supjav links. Among slash commands, only `/ehentai` checks for an age-restricted channel (it also works in DMs).
 - `/解析網頁開關` saves per server. MissAV, Jable, Supjav, and Pornhub previews do not have a switch yet.
 
 ![Gallery preview](https://i.imgur.com/07vfj6h.png)
@@ -74,7 +76,9 @@ The bot checks subscribed shows around their scheduled update times and posts ne
 
 ### Gacha simulator
 
-Send `-1200` to simulate a pull. This message trigger requires Message Content Intent in ordinary server messages.
+Send `-1200` to simulate a ten-pull, or press **再抽十連** on a result to pull again. Each ten-pull plays in a single message. Until the Global server's recruitment update (scheduled after the 2026-11-10 maintenance; the bot switches at 12:00 UTC+8 that day) pulls use the old rules with no pity, and `/統計` counts sparks (井) per 200 pulls. After that the bot uses the Japanese server's Recruitment Charge rules (from 2026-07-29), which Global's announced details may still change: every pull adds 1 to your charge, pull 100 is a guaranteed 3★ with a 50% chance of the rate-up student, pull 200 is a guaranteed rate-up, and the charge resets only when you get the rate-up student. This message trigger requires Message Content Intent in ordinary server messages.
+
+The rate-up banner follows the Blue Archive Global server automatically: the bot checks [SchaleDB](https://schaledb.com)'s current Global banner every hour and rewrites `pu.json` when it changes (`/換池` lets you pick which rate-up student is active). Gacha icons and student portraits are uploaded as the bot's own application emojis, so they display in any server.
 
 - `/統計` shows your results; `/歸零` resets your statistics.
 - `/上鎖` and `/解鎖` control whether the simulator can be used in a channel, subject to the commands' permission checks.
@@ -147,7 +151,7 @@ Several features read runtime JSON files directly and do not create them automat
 | `embed_permission.json`, `welcome.json` | Preview and welcome settings; start with `{}`. |
 | `channel.json`, `sub.json` | Anime notification channels and subscriptions; start with `{}`. |
 | `gacha.json` | Gacha statistics; start with `{}`. |
-| `pu.json` | Gacha character/banner configuration; supply the roster expected by the gacha code. |
+| `pu.json` | Current rate-up students; start with `{}` and the hourly Global banner sync fills it. |
 | `test.json`, `alert.json` | Earthquake input and destination channels; see the integration limitation below. |
 
 Do not overwrite existing runtime data. Check other feature-specific files when enabling additional commands. `bot.py` automatically loads every Python module in `cmds/`, including background tasks; move unused cogs out of that directory if their setup is incomplete.

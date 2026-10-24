@@ -41,6 +41,8 @@ class MyBot(commands.Bot):
             chunk_guilds_at_startup=False,
         )
         self.session = None
+        self.image_cdn = None
+        self._first_ready_done = False
 
         # 將原本的全域變數封裝為屬性 (Attributes)
         self.sac_bh = Conf('sacPY')
@@ -60,6 +62,13 @@ class MyBot(commands.Bot):
         """這是在機器人啟動前會執行的異步初始化函數"""
         self.session = aiohttp.ClientSession()
         self.image_cdn = DiscordImageCDN(self, config.IMAGE_CDN_CHANNEL_ID)
+        # persistent view 在 setup_hook 註冊一次就好；放 on_ready 的話每次斷線重連都會重複註冊
+        self.add_view(NumberView(session=self.session, sec5h=self.missav_crawl))
+        self.add_view(NumberView2(session=self.session))
+        self.add_view(NumberView3())
+        self.add_view(KemonoView(session=self.session))
+        self.add_view(HitomiView(session=self.session))
+        self.add_view(EHentaiView(session=self.session))
         # 載入所有 Cog
         for filename in os.listdir('./cmds'):
             if filename.endswith('.py'):
@@ -73,31 +82,20 @@ class MyBot(commands.Bot):
         # 關閉機器人時同時關閉 Session，避免記憶體洩漏
         if self.session:
             await self.session.close()
-        await self.image_cdn.close()
+        if self.image_cdn is not None:
+            await self.image_cdn.close()
         await super().close()
 
     async def on_ready(self):
-        self.add_view(NumberView(session=self.session, sec5h=self.missav_crawl))
-        self.add_view(NumberView2(session=self.session))
-        self.add_view(NumberView3())
-        self.add_view(KemonoView(session=self.session))
-        self.add_view(HitomiView(session=self.session))
-        self.add_view(EHentaiView(session=self.session))
-        self.image_cdn.start()  # 掃描圖床頻道既有的討論串，重建本子 → 討論串的對應
-
-        server_count = len(self.guilds)
-        data = {
-            "server_count": server_count
-        }
-
-        # 寫入 JSON 文件
-        with open('server_count.json', 'w') as json_file:
-            json.dump(data, json_file)
-
+        write_server_count(len(self.guilds))
         print(f'>> {self.user.name} is online <<')
-        
         await self.change_presence(activity=discord.Game("ATRI -My Dear Moments-"))
-        
+
+        # on_ready 在每次斷線重連後都會再觸發；下面只需要在第一次 ready 做
+        if self._first_ready_done:
+            return
+        self._first_ready_done = True
+        self.image_cdn.start()  # 掃描圖床頻道既有的討論串，重建本子 → 討論串的對應
         try:
             synced = await self.tree.sync()
             print(f'Synced {len(synced)} commands.')
@@ -105,14 +103,16 @@ class MyBot(commands.Bot):
             print(f'Failed to sync commands: {e}')
 
 
-async def main():
-    with open('data/token.json', 'r', encoding='utf8') as file:
-        config = json.load(file)
+def write_server_count(count):
+    with open(config.SERVER_COUNT_FILE, 'w') as json_file:
+        json.dump({"server_count": count}, json_file)
 
+
+async def main():
     bot = MyBot()
-    
+
     async with bot:
-        await bot.start(config["token"])
+        await bot.start(config.TOKEN)
 
 if __name__ == "__main__":
     try:

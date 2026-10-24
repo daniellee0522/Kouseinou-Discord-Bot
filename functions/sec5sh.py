@@ -2,6 +2,10 @@ import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
 
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+# FlareSolverr 本身 maxTimeout 160 秒，多留一點
+SOLVER_TIMEOUT = aiohttp.ClientTimeout(total=180)
+
 class Sec5sh:
     def __init__(self):
         self.cookies = {}
@@ -9,7 +13,7 @@ class Sec5sh:
 
     async def request(self, url):
         headers = {"User-Agent": self.UA} if self.UA else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
-        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers) as session:
+        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers, timeout=REQUEST_TIMEOUT) as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     return await response.text()
@@ -18,7 +22,7 @@ class Sec5sh:
                 
     async def read(self, url):
         headers = {"User-Agent": self.UA} if self.UA else {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"}
-        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers) as session:
+        async with aiohttp.ClientSession(cookies=self.cookies, headers=headers, timeout=REQUEST_TIMEOUT) as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     return True
@@ -37,7 +41,7 @@ class Sec5sh:
             'Content-Type': 'application/json'
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=SOLVER_TIMEOUT) as session:
             async with session.post(urlServer, headers=headers, json=payload) as response:
                 if response.status == 200:
                     data = await response.json()

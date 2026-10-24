@@ -11,13 +11,14 @@ from functions.embed_permission import is_embed_ban
 from functions.slot import Gacha, check_lock, block_check
 from functions.jm import jm_embed_async, NumberView3
 from functions.cdn_pages import cdn_files
+from functions.gacha_play import play_gacha
 from functions.xvideo import xvideo_embed
 from functions.wnacg import create_wnacg_embed, resolve_wnacg_view, NumberView2
 from functions.nhentai import test_embed, NumberView
 from functions.pornhub import get_pornhub_embed
 from functions.supav import chrome_crawl, supjav_crawl
 from functions.brand import MISSAV, JABLE
-from functions.baha import extract_urls, bahaog, reload_baha_tk, Conf
+from functions.baha import bahaog
 from functions.gacha import process_gacha_data
 from functions.facebook_fetch_new import get_facebook_data
 from functions.kemono import kemono_post_embed, kemono_creator_embed, resolve_short_post, KemonoView
@@ -29,9 +30,6 @@ from functions.iwara import iwara_embed, iwara_image_embed
 from functions.video_refresh import fetch_video_info, preview_url, warm_video
 import aiohttp
 import config
-
-# ... 其他解析函數
-sac_bh = Conf('sacPY')
 
 class Events(commands.Cog):
     def __init__(self, bot):
@@ -63,52 +61,21 @@ class Events(commands.Cog):
         self.keywords_match = {
             r"-1200": self.keyword_handler_gacha
         }
+        self._compiled_patterns = [(re.compile(p), h) for p, h in self.url_patterns.items()]
         self._warm_tasks = set()
 
-    def load_data(self,guild_id, num=1, DATA_FILE=None):
-        if DATA_FILE is None:
-            DATA_FILE = config.DATA_DIR / 'message_count.json'
-        if guild_id in config.GUILD_IDS:
-            return
-        with open(DATA_FILE, "r") as f:
-                data = json.load(f)
-        if str(guild_id) not in data:
-            data[str(guild_id)] = num
-        else:
-            data[str(guild_id)] += num
-        with open(DATA_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-
+    def _write_server_count(self):
+        # 跟 bot.py 寫同一個檔（host.py 的 /server_count 讀這個）
+        with open(config.SERVER_COUNT_FILE, 'w') as json_file:
+            json.dump({"server_count": len(self.bot.guilds)}, json_file)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        # 當 bot 加入新的伺服器時更新伺服器數量
-        server_count = len(self.bot.guilds)
-
-        # 更新 JSON 數據
-        data = {
-            "server_count": server_count
-        }
-
-        # load_data(guild.id, -1000)
-
-        # 寫入 JSON 文件
-        with open(config.DATA_DIR / 'server_count.json', 'w') as json_file:
-            json.dump(data, json_file)
+        self._write_server_count()
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild):
-        # 當 bot 被踢出或退出伺服器時更新伺服器數量
-        server_count = len(self.bot.guilds)
-
-        # 更新 JSON 數據
-        data = {
-            "server_count": server_count
-        }
-
-        # 寫入 JSON 文件
-        with open(config.DATA_DIR / 'server_count.json', 'w') as json_file:
-            json.dump(data, json_file)
+        self._write_server_count()
 
     @commands.Cog.listener()
     async def on_member_join(self, member):
@@ -152,7 +119,6 @@ class Events(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message):
-        process = False
         # 排除機器人自己的訊息
         if message.author.bot:
             return
@@ -160,10 +126,9 @@ class Events(commands.Cog):
         if block_check(message.channel.id):
             return
         
-        for pattern, handler in self.url_patterns.items():
-            matches = list(re.finditer(pattern, message.content))
+        for pattern, handler in self._compiled_patterns:
+            matches = list(pattern.finditer(message.content))
             if matches:
-                process = True
                 for match in matches:
                     url = "https://" + match.group(0)
                     print(url)
@@ -181,7 +146,6 @@ class Events(commands.Cog):
             if pattern == message.content:
                 await handler(message)
                 self.bot.dispatch("keyword_triggered", message, handler.__name__.removeprefix("keyword_handler_"))
-                process = True
                 break
 
         await self.bot.process_commands(message)
@@ -203,7 +167,7 @@ class Events(commands.Cog):
         embed = await jm_embed_async(url, cdn=getattr(self.bot, 'image_cdn', None))
         view = NumberView3(embed=embed)
         await message.channel.send(embed=embed, view=view, **cdn_files(embed))
-        await message.edit(suppress=True)
+        await self._suppress(message)
 
 
     async def handler_wnacg(self, message, url, match):
@@ -216,7 +180,7 @@ class Events(commands.Cog):
         if embed not in [404, 403]:
             view = NumberView2(session=self.bot.session, embed=embed)
             await message.channel.send(embed=embed, view=view, **cdn_files(embed))
-            await message.edit(suppress=True)
+            await self._suppress(message)
 
 
     async def handler_wnacg_view(self, message, url, match):
@@ -236,10 +200,7 @@ class Events(commands.Cog):
         if embed not in [404, 403]:
             view = NumberView2(session=self.bot.session, embed=embed)
             await message.channel.send(embed=embed, view=view, **cdn_files(embed))
-            try:
-                await message.edit(suppress=True)
-            except discord.Forbidden:
-                pass
+            await self._suppress(message)
 
     async def handler_nhentai(self, message, url, match):
         if self.is_nsfw_channel(message.channel) is False:
@@ -249,10 +210,10 @@ class Events(commands.Cog):
         content_id = match.group(1)
         embed = await test_embed(session=self.bot.session, sec5h=self.bot.missav_crawl, digit=content_id, cf_clearance="", csrftoken="",
                                  cdn=getattr(self.bot, 'image_cdn', None))
-        view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
-        if embed:
+        if isinstance(embed, discord.Embed):
+            view = NumberView(embed=embed, session=self.bot.session, sec5h=self.bot.missav_crawl)
             await message.channel.send(embed=embed, view=view, **cdn_files(embed))
-            await message.edit(suppress=True)
+            await self._suppress(message)
 
     async def handler_xvideo(self, message, url, match):
         if self.is_nsfw_channel(message.channel) is False:
@@ -263,7 +224,7 @@ class Events(commands.Cog):
         if embed:
             await message.channel.send(embed=embed)
             await message.channel.send(f"[.]({video_url})")
-            await message.edit(suppress=True)
+            await self._suppress(message)
 
     async def handler_pornhub(self, message, url, match):
         if self.is_nsfw_channel(message.channel) is False:
@@ -271,14 +232,18 @@ class Events(commands.Cog):
         embed = await get_pornhub_embed(url)
         if embed:
             await message.channel.send(embed=embed)
-            await message.edit(suppress=True)
+            await self._suppress(message)
 
     async def handler_missav(self, message, url, match):
         response = await self.bot.missav_crawl.request(url)
+        if not response:
+            return
         soup = BeautifulSoup(response, 'html.parser')
         description = soup.find('meta', attrs={'name': 'description'})
         title = soup.find('meta', attrs={'property': 'og:title'})
         image = soup.find('meta', attrs={'property': 'og:image'})
+        if not title:
+            return
 
         embed = discord.Embed(title=title['content'], url=url, color=MISSAV["color"])
         if image:
@@ -289,13 +254,17 @@ class Events(commands.Cog):
         embed.set_author(name=MISSAV["name"], url=url, icon_url=MISSAV["icon_url"])
 
         await message.channel.send(embed=embed)
-        await message.edit(suppress=True)
+        await self._suppress(message)
 
     async def handler_jable(self, message, url, match):
         response = await self.bot.jable_crawl.request(url)
+        if not response:
+            return
         soup = BeautifulSoup(response, 'html.parser')
         title = soup.find('meta', attrs={'property': 'og:title'})
         image = soup.find('meta', attrs={'property': 'og:image'})
+        if not title:
+            return
 
         embed = discord.Embed(title=title['content'], url=url, color=JABLE["color"])
         if image:
@@ -304,13 +273,13 @@ class Events(commands.Cog):
         embed.set_author(name=JABLE["name"], url=url, icon_url=JABLE["icon_url"])
 
         await message.channel.send(embed=embed)
-        await message.edit(suppress=True)
+        await self._suppress(message)
 
     async def handler_supjav(self, message, url, match):
         embed = await supjav_crawl(url)
         if embed:
             await message.channel.send(embed=embed)
-            await message.edit(suppress=True)
+            await self._suppress(message)
 
     async def handler_baha(self, message, url, match):
         # await message.channel.send(url)
@@ -319,12 +288,12 @@ class Events(commands.Cog):
         bsn = match.group(1)
         if bsn != "60076":
             return
+        sac_bh = self.bot.sac_bh
         BAHAENUR = sac_bh.get('BAHAENUR')
         BAHARUNE = sac_bh.get('BAHARUNE')
         embed = await asyncio.to_thread(bahaog, url=url, BAHAENUR=BAHAENUR, BAHARUNE=BAHARUNE, sac_bh=sac_bh)
-        print(embed)
         await message.channel.send(embed=embed)
-        await message.edit(suppress=True)
+        await self._suppress(message)
 
     async def handler_facebook(self, message, url, match):
         if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="fb"):
@@ -366,7 +335,7 @@ class Events(commands.Cog):
                 await message.channel.send(embed=embed)
             if data.get("video"):
                 await message.channel.send(f"[連結]({data['video']})")
-            await message.edit(suppress=True)
+            await self._suppress(message)
 
     async def handler_kemono(self, message, url, match):
         await self._send_kemono_post(message, url, *match.groups())
@@ -394,10 +363,7 @@ class Events(commands.Cog):
         if embed:
             view = KemonoView(session=self.bot.session, embed=embed) if pages > 1 else None
             await message.channel.send(embed=embed, **({"view": view} if view else {}), **cdn_files(embed))
-            try:
-                await message.edit(suppress=True)
-            except discord.Forbidden:
-                pass
+            await self._suppress(message)
 
     async def handler_kemono_creator(self, message, url, match):
         if not self.is_nsfw_channel(message.channel):
@@ -411,10 +377,7 @@ class Events(commands.Cog):
             return
         if embed:
             await message.channel.send(embed=embed)
-            try:
-                await message.edit(suppress=True)
-            except discord.Forbidden:
-                pass
+            await self._suppress(message)
 
     async def _send_video_preview(self, message, site, video_id, name) -> bool:
         """有設定 host.py 的影片預覽頁時，貼預覽頁網址讓 Discord 產生能直接播的影片 embed。
@@ -452,12 +415,16 @@ class Events(commands.Cog):
         except discord.HTTPException as e:  # 訊息被刪掉之類的
             print(f"[video] {site}/{video_id} 換成影片卡片失敗: {e!r}")
 
-    async def _send_and_suppress(self, message, **kwargs):
-        sent = await message.channel.send(**kwargs)
+    @staticmethod
+    async def _suppress(message):
         try:
             await message.edit(suppress=True)
-        except discord.Forbidden:
+        except discord.HTTPException:
             pass
+
+    async def _send_and_suppress(self, message, **kwargs):
+        sent = await message.channel.send(**kwargs)
+        await self._suppress(message)
         return sent
 
     async def handler_hitomi(self, message, url, match):
@@ -560,24 +527,9 @@ class Events(commands.Cog):
             await self._send_and_suppress(message, embeds=embeds)
 
     async def keyword_handler_gacha(self, message):
-        data, status = process_gacha_data(message.author.id, message.channel.id)
-            
-        if status == "lock": return
-        if not data: return
-            
-            # 發送訊息
-        await message.channel.send("<:B_env:1076108979375185930>\n<:Arona:1076109041136316496>")
-        await message.channel.send("<:result:1076111748106571830>")
-        await message.channel.send(data["feed"])
-        await message.channel.send(data["stone"])
-            
-            # 特殊條件跳轉影片/圖
-        res_list = data["result"]
-        if 4 in res_list:
-            await message.channel.send("https://cdn.discordapp.com/attachments/1149330986279108689/1171035321736110100/6bd4b9604ac8b986.mp4")
-        if res_list.count(1) == 9 and res_list.count(2) == 1:
-            await message.channel.send("https://cdn.discordapp.com/attachments/1040328234463666236/1080134411468689558/IMG_1177.jpg")
-
+        # 回覆觸發的訊息，看得出是誰抽的；整個十連只用這一則訊息
+        await play_gacha(self.bot, message.author.id, message.channel.id,
+                         lambda content: message.reply(content, mention_author=False))
 
 async def setup(bot):
     await bot.add_cog(Events(bot))

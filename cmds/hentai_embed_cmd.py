@@ -171,17 +171,24 @@ class HentaiEmbedCmd(commands.Cog):
         await reply_with_send(interaction, work)
             
 
-    @app_commands.command(name="ehentai", description="回傳 E-Hentai / ExHentai embed", nsfw=True)
-    @app_commands.describe(gallery="本子或單頁網址，或「gid token」（例如 4275260 72689e29a9）",
+    # 不用 nsfw=True：Discord 會把年齡限制指令從 bot 的指令清單藏起來，改成執行時檢查頻道
+    @app_commands.command(name="ehentai", description="回傳 E-Hentai / ExHentai embed（限 NSFW 頻道）")
+    @app_commands.describe(gallery="本子編號（例如 4275260）、本子或單頁網址，或「gid token」",
                            page="從第幾頁開始（預設第 1 頁；單頁網址會用網址上的頁碼）")
     async def ehentai(self, interaction: discord.Interaction, gallery: str, page: app_commands.Range[int, 1] = None):
+        channel = interaction.channel
+        if isinstance(channel, discord.Thread):
+            channel = channel.parent
+        if interaction.guild is not None and not (channel and getattr(channel, "is_nsfw", lambda: False)()):
+            return await interaction.response.send_message("這個指令只能在 NSFW 頻道或私訊使用。", ephemeral=True)
+
         async def work():
             try:
                 parsed = await parse_gallery_input(self.bot.session, gallery)
             except Exception:
                 parsed = None
             if parsed is None:
-                return dict(content="看不懂這個本子，請貼 e-hentai / exhentai 網址，或輸入「gid token」", ephemeral=True)
+                return dict(content="找不到這個本子。請輸入本子編號、e-hentai / exhentai 網址或「gid token」；已被刪除的本子要貼完整網址", ephemeral=True)
             gid, token, link_page, ex = parsed
             try:
                 embed, pages = await ehentai_embed(self.bot.session, gid, token, page or link_page or 1,

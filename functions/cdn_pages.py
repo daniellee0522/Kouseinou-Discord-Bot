@@ -24,6 +24,15 @@ _prefetch_done = {}
 _prefetch_running = set()
 # 第一次送出時直接附在回覆訊息上的圖：id(embed) -> discord.File
 _pending_files = {}
+# 背景工作的參照：asyncio 只留弱參照，不存起來可能跑到一半被回收
+_background = set()
+
+
+def _spawn(coro):
+    task = asyncio.create_task(coro)
+    _background.add(task)
+    task.add_done_callback(_background.discard)
+    return task
 
 
 class InlineImage(str):
@@ -171,9 +180,13 @@ def schedule_prefetch(cdn, gallery, start, total, src_of, transform_for=None):
     """背景把整本上傳到圖床：從目前頁往後優先，再補前面的頁。"""
     if cdn is None or not cdn.enabled or total is None:
         return
-    if _prefetch_done.get(gallery, 0) > time.monotonic():
+    now = time.monotonic()
+    if _prefetch_done.get(gallery, 0) > now:
         return
-    asyncio.create_task(_prefetch(cdn, gallery, int(start), total, src_of, transform_for))
+    if len(_prefetch_done) > 500:
+        for g in [g for g, t in _prefetch_done.items() if t <= now]:
+            del _prefetch_done[g]
+    _spawn(_prefetch(cdn, gallery, int(start), total, src_of, transform_for))
 
 
 async def cdn_page_image(cdn, gallery, page_num, src_of, total=None, transform_for=None, thread_hint=None,
@@ -200,7 +213,7 @@ async def cdn_page_image(cdn, gallery, page_num, src_of, total=None, transform_f
                 cdn.preload(key, data, ext)
                 cdn.prefetch(gallery, [(key, src, transform)], priority=0)
                 if total is not None:
-                    asyncio.create_task(_prefetch_window(cdn, gallery, page_num, total, src_of, transform_for))
+                    _spawn(_prefetch_window(cdn, gallery, page_num, total, src_of, transform_for))
                 schedule_prefetch(cdn, gallery, page_num, total, src_of, transform_for)
                 return InlineImage(key + ext, discord.File(io.BytesIO(data), filename=key + ext))
         except Exception as e:
@@ -208,7 +221,7 @@ async def cdn_page_image(cdn, gallery, page_num, src_of, total=None, transform_f
             return None
         url = await cdn.ensure(gallery, key, src, transform)
         if url and total is not None:
-            asyncio.create_task(_prefetch_window(cdn, gallery, page_num, total, src_of, transform_for))
+            _spawn(_prefetch_window(cdn, gallery, page_num, total, src_of, transform_for))
     if url:
         schedule_prefetch(cdn, gallery, page_num, total, src_of, transform_for)
     return url

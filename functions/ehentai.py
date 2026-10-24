@@ -129,10 +129,23 @@ async def resolve_page_link(session, imgkey, gid, page):
 _PAGE_LINK = re.compile(r"(e-|ex)hentai\.org/s/([0-9a-f]{10})/(\d+)-(\d+)")
 _GALLERY_LINK = re.compile(r"(e-|ex)hentai\.org/(?:g|mpv)/(\d+)/([0-9a-f]{10})")
 _PLAIN_ID = re.compile(r"^\s*(\d+)[\s/]+([0-9a-f]{10})\s*$")
+_GID_ONLY = re.compile(r"^\s*(\d+)\s*$")
+
+
+@async_ttl_cache(ttl_seconds=86400, maxsize=512, key_arg="gid")
+async def find_token(session, gid):
+    """只有 gid 時找 token：列表頁 ?next=<gid+1> 從比它小的本子開始列，第一本就是它。
+    已被刪除（不在列表上）的本子找不到；有 exhentai cookies 時再到 exhentai 找。回傳 (token, host)，找不到丟 LookupError。"""
+    for host in _hosts():
+        text = await _get_html(session, f"https://{host}/?next={int(gid) + 1}", host)
+        first = re.search(rf"https://{re.escape(host)}/g/(\d+)/([0-9a-f]{{10}})", text)
+        if first and first.group(1) == str(gid):
+            return first.group(2), host
+    raise LookupError(f"ehentai gid {gid} not listed")
 
 
 async def parse_gallery_input(session, text):
-    """斜線指令的輸入：本子網址、單頁網址，或「gid token」。回傳 (gid, token, 頁碼或 None, 是否 ExHentai)；看不懂回傳 None。"""
+    """斜線指令的輸入：本子網址、單頁網址、「gid token」或只有 gid。回傳 (gid, token, 頁碼或 None, 是否 ExHentai)；看不懂或找不到回傳 None。"""
     if match := _GALLERY_LINK.search(text):
         site, gid, token = match.groups()
         return gid, token, None, site == "ex"
@@ -142,6 +155,12 @@ async def parse_gallery_input(session, text):
         return (gid, token, int(page), site == "ex") if token else None
     if match := _PLAIN_ID.match(text):
         return match.group(1), match.group(2), None, False
+    if match := _GID_ONLY.match(text):
+        try:
+            token, host = await find_token(session, match.group(1))
+        except _FETCH_ERRORS:
+            return None
+        return match.group(1), token, None, host == "exhentai.org"
     return None
 
 

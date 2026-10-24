@@ -133,6 +133,7 @@ class DiscordImageCDN:
         self._preloaded = {}       # key -> (bytes, 副檔名)：已經下載處理好、等著傳進討論串的圖
         self._job_seq = itertools.count()
         self._scan_done = asyncio.Event()
+        self._tasks = set()        # 背景工作的參照，避免被 GC 回收
 
     @property
     def enabled(self):
@@ -147,8 +148,8 @@ class DiscordImageCDN:
         # 不會長時間占住 worker，讓別人翻頁要的頁可以插隊）
         self._jobs = asyncio.PriorityQueue()
         for _ in range(self.prefetch_workers):
-            asyncio.create_task(self._prefetch_worker())
-        asyncio.create_task(self._scan_threads())
+            self._spawn(self._prefetch_worker())
+        self._spawn(self._scan_threads())
 
     async def _scan_threads(self):
         try:
@@ -376,6 +377,12 @@ class DiscordImageCDN:
             resp.raise_for_status()
             return await resp.read()
 
+    def _spawn(self, coro):
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
+
     def warm(self, url):
         """背景先對圖片主機建立連線（例如爬 nhentai 頁面的同時），之後取圖省掉 TCP+TLS 的時間。"""
         if not self.enabled or not self._use_http2:
@@ -387,9 +394,11 @@ class DiscordImageCDN:
             except Exception:
                 pass
 
-        asyncio.create_task(_warm())
+        self._spawn(_warm())
 
     async def close(self):
+        for task in list(self._tasks):
+            task.cancel()
         if self._http is not None:
             await self._http.aclose()
             self._http = None

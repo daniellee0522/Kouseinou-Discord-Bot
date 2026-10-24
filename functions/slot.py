@@ -1,6 +1,7 @@
 import random
 import json
 import config
+from utils.json_cache import load_json_cached
 def Gacha(SSR,SR,R,PU=[],time=10): #三星、二星、一星、PU率(可能有多PU)、次數
     #amount=[]
     type_=[]
@@ -47,17 +48,8 @@ def unlock_channel(channel_id):
         return "unlocked"
     
 def check_lock(channel_id):
-    with open (config.DATA_DIR / 'lock.json','r', encoding = 'utf8') as file:
-        data= json.load(file)
-    if channel_id in data:
-        return True
-    else:
-        return False
+    return channel_id in load_json_cached(config.DATA_DIR / 'lock.json', [])
     
 def block_check(channel_id):
-    with open (config.DATA_DIR / 'block.json','r', encoding = 'utf8') as file:
-        data = json.load(file)
-    if channel_id in data:
-        return True
-    else:
-        return False
+    # 每則訊息都會呼叫：檔案沒改過就不重新讀
+    return channel_id in load_json_cached(config.DATA_DIR / 'block.json', [])
