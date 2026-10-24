@@ -23,6 +23,12 @@ class Embed開關指令(Cog_Extension):
             Choice(name="禁漫天堂", value="jm"),
             Choice(name="xvideo", value="andy"),
             Choice(name="facebook", value="fb"),
+            Choice(name="kemono", value="kemono"),
+            Choice(name="hitomi", value="hitomi"),
+            Choice(name="E-Hentai / ExHentai", value="ehentai"),
+            Choice(name="Mobile01", value="m01"),
+            Choice(name="hanime1", value="hanime"),
+            Choice(name="iwara", value="iwara"),
         ]
     )
     async def 場外開關(self, interaction: discord.Interaction, website: Choice[str]):

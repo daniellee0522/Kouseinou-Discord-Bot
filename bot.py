@@ -11,6 +11,9 @@ from functions.nhentai import NumberView
 from functions.wnacg import NumberView2
 import aiohttp
 from functions.jm import NumberView3
+from functions.kemono import KemonoView
+from functions.hitomi import HitomiView
+from functions.ehentai import EHentaiView
 from functions.discord_cdn import DiscordImageCDN
 import config
 
@@ -44,6 +47,9 @@ class MyBot(commands.Bot):
         self.missav_crawl = Sec5sh()
         self.jable_crawl = Sec5sh()
         self.supjav_crawl = Sec5sh()
+        self.mobile01_crawl = Sec5sh()
+        self.hanime_crawl = Sec5sh()
+        self.iwara_crawl = Sec5sh()
         self.x_lst = {}
         self.data_lock = asyncio.Lock() # 避免與內建屬性 lock 衝突
 
@@ -74,6 +80,9 @@ class MyBot(commands.Bot):
         self.add_view(NumberView(session=self.session, sec5h=self.missav_crawl))
         self.add_view(NumberView2(session=self.session))
         self.add_view(NumberView3())
+        self.add_view(KemonoView(session=self.session))
+        self.add_view(HitomiView(session=self.session))
+        self.add_view(EHentaiView(session=self.session))
         self.image_cdn.start()  # 掃描圖床頻道既有的討論串，重建本子 → 討論串的對應
 
         server_count = len(self.guilds)

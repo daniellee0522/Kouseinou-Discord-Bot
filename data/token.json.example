@@ -7,12 +7,18 @@
     "owner_id": 0,
     "guild_ids": [0, 0],
     "jm_log_channel_id": 0,
-    "image_cdn_channel_id": 0,
+    "log_channel_id": 0,
     "nh_proxy_url": "https://your-worker.workers.dev",
     "pic_proxy_url": "https://your-domain.example.com/pic",
     "media_base_url": "https://your-domain.example.com/media",
+    "video_preview_base": "https://your-domain.example.com",
     "video_path": "/path/to/your/videos",
     "md5_json_path": "/path/to/md5.json",
+    "exhentai_cookies": {
+        "ipb_member_id": "",
+        "ipb_pass_hash": "",
+        "igneous": ""
+    },
     "sheet_user_columns_check": {
         "DISCORD_USER_ID_1": 5,
         "DISCORD_USER_ID_2": 6

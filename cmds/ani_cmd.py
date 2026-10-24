@@ -6,7 +6,8 @@ import discord
 from discord.ext import commands
 from discord.ui import Button, View
 from discord import app_commands
-from functions.ani_gamer import anime_get_info, anime_lst, anime_get_info_add
+from functions.ani_gamer import (anime_get_info, anime_lst, anime_get_info_add,
+                                 subscribed_names, list_subscriptions, remove_subscription)
 from core.classes import Cog_Extension
 import config
 
@@ -28,16 +29,7 @@ class 動畫瘋指令(Cog_Extension):
             await interaction.response.defer()
             inf = await asyncio.to_thread(anime_get_info, anime_name, R_18)
             if inf != [] and inf != "fail to connect":
-                with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
-                    data = json.load(f)
-                lst = []
-                try:
-                    for i in range(len(data[str(server_id)])):
-                        lst.append(data[str(server_id)][i]["name"])
-                except KeyError:
-                    data[str(server_id)] = []
-                    for i in range(len(data[str(server_id)])):
-                        lst.append(data[str(server_id)][i]["name"])
+                lst = await asyncio.to_thread(subscribed_names, server_id)
                 if inf[0] in lst:
                     button = Button(label="已訂閱")
                     button.disabled = True
@@ -45,11 +37,18 @@ class 動畫瘋指令(Cog_Extension):
                     button = Button(label="訂閱")
 
                     async def button_callback(i):
+                        await i.response.defer()
+                        result = await asyncio.to_thread(anime_get_info_add, inf[0], server_id, R_18)
+                        if result is None:
+                            await i.followup.send("連線錯誤", ephemeral=True)
+                            return
+                        if result == "not found":
+                            await i.followup.send("此動畫不存在或並非更新中", ephemeral=True)
+                            return
                         button1 = Button(label="已訂閱", disabled=True)
                         view1 = View()
                         view1.add_item(button1)
-                        await i.response.edit_message(view=view1)
-                        await asyncio.to_thread(anime_get_info_add, inf[0], server_id, R_18)
+                        await i.edit_original_response(view=view1)
                     button.callback = button_callback
                 view = View()
                 view.add_item(button)
@@ -82,7 +81,7 @@ class 動畫瘋指令(Cog_Extension):
             await interaction.response.defer()
             inf = await asyncio.to_thread(anime_lst)
             if inf == "fail to connect":
-                await interaction.response.send_message("連線錯誤")
+                await interaction.followup.send("連線錯誤")
             else:
                 if len(inf) <= 25:
                     embed = discord.Embed(
@@ -143,8 +142,6 @@ class 動畫瘋指令(Cog_Extension):
         """
         使用方法:$訂閱 {番名} {是否是R-18(若有則輸入R，沒有則無需輸入)}
         """
-        if R_18 == "y":
-            R_18 = "n"
         try:
             server_id = interaction.guild_id
             if server_id == None:
@@ -152,8 +149,9 @@ class 動畫瘋指令(Cog_Extension):
                 return
             await interaction.response.defer()
             result = await asyncio.to_thread(anime_get_info_add, anime_name, server_id, R_18)
-            if result == "repeated":
-                print("test")
+            if result is None:
+                await interaction.followup.send("連線錯誤")
+            elif result == "repeated":
                 await interaction.followup.send("已經訂閱過了")
             elif result == "not found":
                 await interaction.followup.send("此動畫不存在或並非更新中")
@@ -169,68 +167,18 @@ class 動畫瘋指令(Cog_Extension):
         """
         使用方法:$刪除訂閱 {番名} {是否是R-18(若有則輸入R，沒有則無需輸入)}
         """
-        dict_ = {}
         try:
             server_id = interaction.guild_id
             if server_id == None:
                 await interaction.response.send_message("Not available")
                 return
-            with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
-                data = json.load(f)
-            try:
-                for i in range(len(data[str(server_id)])):
-                    if anime_name in data[str(server_id)][i]["name"]:
-                        dict_[i] = data[str(server_id)][i]["name"]
-                print(dict_)
-                if len(dict_) > 1:
-                    # print("不只一個")
-                    if R_18 == "r" or R_18 == "R":
-                        for key, value in dict_.items():
-                            if "(年齡限制)" in value:
-                                await interaction.response.send_message("已刪除"+value)
-                                data[str(server_id)].pop(key)
-                                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
-                                    json.dump(
-                                        data, f, ensure_ascii=False, indent=4)
-                                return
-                    else:
-                        for key, value in dict_.items():
-                            if "(年齡限制)" not in value:
-                                await ("已刪除"+value)
-                                data[str(server_id)].pop(key)
-                                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
-                                    json.dump(
-                                        data, f, ensure_ascii=False, indent=4)
-                                return
-                elif len(dict_) == 1:
-                    print("一個")
-                    if R_18 == "r" or R_18 == "R":
-                        print("有R")
-                        for key, value in dict_.items():
-                            if "(年齡限制)" not in value:
-                                await interaction.response.send_message("沒有訂閱此動畫的年齡限制版")
-                                return
-                            else:
-                                await interaction.response.send_message("已刪除"+data[str(server_id)][key]["name"])
-                                data[str(server_id)].pop(key)
-                                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
-                                    json.dump(
-                                        data, f, ensure_ascii=False, indent=4)
-                                return
-                    else:
-                        for key, value in dict_.items():
-                            await interaction.response.send_message("已刪除"+data[str(server_id)][key]["name"])
-                            data[str(server_id)].pop(key)
-                            with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
-                                json.dump(
-                                    data, f, ensure_ascii=False, indent=4)
-                            return
-
-                else:
-                    await interaction.response.send_message("沒有訂閱此動畫")
-                    return
-            except KeyError:
+            result = await asyncio.to_thread(remove_subscription, server_id, anime_name, R_18)
+            if result is None:
                 await interaction.response.send_message("沒有訂閱此動畫")
+            elif result == "no r18":
+                await interaction.response.send_message("沒有訂閱此動畫的年齡限制版")
+            else:
+                await interaction.response.send_message("已刪除"+result)
         except AttributeError:
             pass
 
@@ -246,39 +194,32 @@ class 動畫瘋指令(Cog_Extension):
             if server_id == None:
                 await interaction.response.send_message("Not available")
                 return
-            embed = discord.Embed(
-                title="訂閱列表",
-                description="目前已訂閱動畫",
-                color=0x5568,
-                timestamp=datetime.datetime.now(pytz.utc)
-            )
-            embed.set_author(
-                name="巴哈姆特動畫瘋", icon_url="https://i.imgur.com/RF7sMkY.png")
-            with open(config.DATA_DIR / 'sub.json', 'r', encoding='utf8') as f:
-                data = json.load(f)
-            try:
-                if data[str(server_id)] == []:
-                    await interaction.response.send_message(content="未訂閱任何動畫")
-                    return
-
-                data[str(server_id)].sort(key=lambda x: (
-                    x["update_date"], x["update_time"], x["name"]))
-                with open(config.DATA_DIR / 'sub.json', 'w', encoding='utf8') as f:
-                    json.dump(data, f, ensure_ascii=False, indent=4)
-
-                for anime in data[str(server_id)]:
-                    a = anime["name"]
-                    time_lst = list(anime["update_time"])
-                    time_lst.insert(2, ":")
-                    time = ''.join(time_lst)
-                    embed.add_field(name=a,
-                                    value=week_lst[anime["update_date"]
-                                                   ]+time+" 更新",
+            subs = await asyncio.to_thread(list_subscriptions, server_id)
+            if not subs:
+                await interaction.response.send_message(content="未訂閱任何動畫")
+                return
+            embeds = []
+            for start in range(0, len(subs), 24):
+                if start == 0:
+                    embed = discord.Embed(
+                        title="訂閱列表",
+                        description="目前已訂閱動畫",
+                        color=0x5568,
+                        timestamp=datetime.datetime.now(pytz.utc)
+                    )
+                    embed.set_author(
+                        name="巴哈姆特動畫瘋", icon_url="https://i.imgur.com/RF7sMkY.png")
+                else:
+                    embed = discord.Embed(color=0x5568)
+                for anime in subs[start:start+24]:
+                    update_time = anime.get("update_time") or ""
+                    time = update_time[:2]+":"+update_time[2:] if update_time else ""
+                    embed.add_field(name=anime["name"],
+                                    value=week_lst.get(anime.get("update_date"), "")+time+" 更新",
                                     inline=True
                                     )
-                await interaction.response.send_message(embed=embed)
-            except:
-                await interaction.response.send_message(content="未訂閱任何動畫")
+                embeds.append(embed)
+            await interaction.response.send_message(embeds=embeds[:10])
         except AttributeError:
             pass
 

@@ -21,7 +21,10 @@ JM_LOG_CHANNEL_ID       = int(_cfg.get('jm_log_channel_id', 0))
 NH_PROXY_URL            = _cfg.get('nh_proxy_url', '')
 PIC_PROXY_URL           = _cfg.get('pic_proxy_url', '')
 IMAGE_CDN_CHANNEL_ID    = int(_cfg.get('image_cdn_channel_id', 0))  # 圖床頻道，0 = 不使用
+EXHENTAI_COOKIES        = _cfg.get('exhentai_cookies', {})        # ipb_member_id / ipb_pass_hash / igneous，空 = 只用 e-hentai
+LOG_CHANNEL_ID          = int(_cfg.get('log_channel_id', 0))        # 互動紀錄頻道，0 = 不使用
 MEDIA_BASE_URL          = _cfg.get('media_base_url', '')
+VIDEO_PREVIEW_BASE      = _cfg.get('video_preview_base', '').rstrip('/')  # host.py 的 /p 影片預覽頁，空字串 = 不使用
 VIDEO_PATH              = _cfg.get('video_path', str(_base / 'videos'))
 MD5_JSON_PATH           = _cfg.get('md5_json_path', str(DATA_DIR / 'md5.json'))
 SHEET_USER_COLUMNS_CHECK = {int(k): v for k, v in _cfg.get('sheet_user_columns_check', {}).items()}

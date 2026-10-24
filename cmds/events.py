@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 import re
+import traceback
 import json
 import asyncio
 import random
@@ -19,6 +20,13 @@ from functions.brand import MISSAV, JABLE
 from functions.baha import extract_urls, bahaog, reload_baha_tk, Conf
 from functions.gacha import process_gacha_data
 from functions.facebook_fetch_new import get_facebook_data
+from functions.kemono import kemono_post_embed, kemono_creator_embed, resolve_short_post, KemonoView
+from functions.hitomi import hitomi_embed, HitomiView
+from functions.ehentai import ehentai_embed, resolve_page_link, EHentaiView
+from functions.mobile01 import mobile01_embeds
+from functions.hanime1 import hanime1_embed
+from functions.iwara import iwara_embed, iwara_image_embed
+from functions.video_refresh import fetch_video_info, preview_url, warm_video
 import aiohttp
 import config
 
@@ -38,13 +46,24 @@ class Events(commands.Cog):
             r'jable\.tv/videos/([\w-]+)[^\s]*': self.handler_jable,
             r'xvideos\.com/video[^\s]*': self.handler_xvideo,
             r'pornhub\.com/view_video\.php\?viewkey=(\w+)': self.handler_pornhub,
-            r"supjav.com\/[0-9]\+.html": self.handler_supjav,
+            r'supjav\.com/(?:[a-z]{2}/)?\d+\.html': self.handler_supjav,
             r'forum\.gamer\.com\.tw/.*?bsn=(\d+)[^\s]*': self.handler_baha,
-            r'(facebook\.com|fb\.watch)[^\s]*': self.handler_facebook
+            r'(facebook\.com|fb\.watch)[^\s]*': self.handler_facebook,
+            r'(kemono|coomer)\.(?:su|cr|st|party)/(\w+)/user/([\w.-]+)/post/(\d+)': self.handler_kemono,
+            r'(kemono|coomer)\.(?:su|cr|st|party)/(\w+)/post/(\d+)': self.handler_kemono_short,
+            r'(kemono|coomer)\.(?:su|cr|st|party)/(\w+)/user/([\w.-]+)/?(?![\w./-])': self.handler_kemono_creator,
+            r'hitomi\.la/(?:galleries/|reader/|\w+/[^\s]*?-)(\d+)\.html(?:#(\d+))?': self.handler_hitomi,
+            r'(e-|ex)hentai\.org/(?:g|mpv)/(\d+)/([0-9a-f]{10})[^\s]*': self.handler_ehentai,
+            r'(e-|ex)hentai\.org/s/([0-9a-f]{10})/(\d+)-(\d+)[^\s]*': self.handler_ehentai_page,
+            r'mobile01\.com/topicdetail\.php\?[^\s]*?\bt=\d+[^\s]*': self.handler_mobile01,
+            r'hanime(?:1|one)\.me/watch\?(?:[^\s]*?&)?v=(\d+)': self.handler_hanime1,
+            r'iwara\.tv/video/(\w+)[^\s]*': self.handler_iwara,
+            r'iwara\.tv/image/(\w+)[^\s]*': self.handler_iwara_image
         }
         self.keywords_match = {
             r"-1200": self.keyword_handler_gacha
         }
+        self._warm_tasks = set()
 
     def load_data(self,guild_id, num=1, DATA_FILE=None):
         if DATA_FILE is None:
@@ -100,25 +119,36 @@ class Events(commands.Cog):
         # 獲取伺服器中的目標身分組
         role = discord.utils.get(member.guild.roles, name=role_name)
         if int(server_id) == 927850351703506954:
-            try:
-                # 為新成員分配身分組
-                await member.add_roles(role)
-                print(f"已成功為 {member.name} 分配身分組 {role.name}")
-            except discord.Forbidden:
-                print(f"無法分配身分組 {role.name}，請檢查權限")
-            except discord.HTTPException as e:
-                print(f"發生錯誤：{e}")
-                
+            if role is None:
+                print(f"找不到身分組 {role_name}，略過分配")
+            else:
+                try:
+                    # 為新成員分配身分組
+                    await member.add_roles(role)
+                    print(f"已成功為 {member.name} 分配身分組 {role.name}")
+                except discord.Forbidden:
+                    print(f"無法分配身分組 {role.name}，請檢查權限")
+                except discord.HTTPException as e:
+                    print(f"發生錯誤：{e}")
+
         with open(config.DATA_DIR / 'welcome.json', 'r', encoding='utf8') as file:
             data = json.load(file)
-        if server_id in list(data.keys()):
-            message = data[server_id][0]
-            channel = self.bot.get_channel(data[server_id][1])
-            await asyncio.sleep(1)
-            await channel.send(message)
-        else:
-            name = member.guild.name
-            await member.send(f"歡迎來到{name}伺服器")
+        try:
+            if server_id in data:
+                message = data[server_id][0]
+                channel = self.bot.get_channel(data[server_id][1])
+                if channel is None:
+                    # 歡迎頻道已被刪除或機器人看不到
+                    print(f"找不到伺服器 {server_id} 的歡迎頻道")
+                    return
+                await asyncio.sleep(1)
+                await channel.send(message)
+            else:
+                name = member.guild.name
+                await member.send(f"歡迎來到{name}伺服器")
+        except discord.HTTPException as e:
+            # 頻道沒有發言權限，或成員關閉私訊
+            print(f"無法發送歡迎訊息：{e}")
 
     @commands.Cog.listener()
     async def on_message(self, message):
@@ -137,12 +167,20 @@ class Events(commands.Cog):
                 for match in matches:
                     url = "https://" + match.group(0)
                     print(url)
-                    # 執行處理函式
-                    await handler(message, url, match)
-        
+                    # 執行處理函式；結果交給 interaction_log 記到 log 頻道。單一網址出錯不影響其他網址與指令
+                    name = handler.__name__.removeprefix("handler_")
+                    try:
+                        await handler(message, url, match)
+                    except Exception as e:
+                        traceback.print_exc()
+                        self.bot.dispatch("link_parsed", message, name, url, e)
+                    else:
+                        self.bot.dispatch("link_parsed", message, name, url)
+
         for pattern, handler in self.keywords_match.items():
             if pattern == message.content:
                 await handler(message)
+                self.bot.dispatch("keyword_triggered", message, handler.__name__.removeprefix("keyword_handler_"))
                 process = True
                 break
 
@@ -329,6 +367,197 @@ class Events(commands.Cog):
             if data.get("video"):
                 await message.channel.send(f"[連結]({data['video']})")
             await message.edit(suppress=True)
+
+    async def handler_kemono(self, message, url, match):
+        await self._send_kemono_post(message, url, *match.groups())
+
+    async def handler_kemono_short(self, message, url, match):
+        # 沒有創作者 ID 的短網址：API 會告訴我們是哪個創作者
+        if not self.is_nsfw_channel(message.channel):
+            return
+        site, service, post_id = match.groups()
+        user_id = await resolve_short_post(self.bot.session, site, service, post_id)
+        if user_id:
+            await self._send_kemono_post(message, url, site, service, user_id, post_id)
+
+    async def _send_kemono_post(self, message, url, site, service, user_id, post_id):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="kemono"):
+            return
+        try:
+            embed, pages = await kemono_post_embed(self.bot.session, site, service, user_id, post_id,
+                                                   cdn=getattr(self.bot, 'image_cdn', None))
+        except Exception as e:
+            print(f"[kemono] {url} failed: {e!r}")
+            return
+        if embed:
+            view = KemonoView(session=self.bot.session, embed=embed) if pages > 1 else None
+            await message.channel.send(embed=embed, **({"view": view} if view else {}), **cdn_files(embed))
+            try:
+                await message.edit(suppress=True)
+            except discord.Forbidden:
+                pass
+
+    async def handler_kemono_creator(self, message, url, match):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="kemono"):
+            return
+        try:
+            embed = await kemono_creator_embed(self.bot.session, *match.groups())
+        except Exception as e:
+            print(f"[kemono] {url} failed: {e!r}")
+            return
+        if embed:
+            await message.channel.send(embed=embed)
+            try:
+                await message.edit(suppress=True)
+            except discord.Forbidden:
+                pass
+
+    async def _send_video_preview(self, message, site, video_id, name) -> bool:
+        """有設定 host.py 的影片預覽頁時，貼預覽頁網址讓 Discord 產生能直接播的影片 embed。
+        先問 host 解析結果（host 會快取，Discord 接著來抓預覽頁時立刻有回應）：
+        - 檔案不超過上限：貼預覽頁網址（資訊＋影片在同一張卡片，影片網址每次重新解析，不會過期）
+        - 全部畫質都太大（Discord 不會產生播放器）：一樣貼預覽頁，host 會改成只有縮圖＋資訊的卡片
+        - 影片還沒進 Cloudflare 快取：先貼只有縮圖的卡片，背景預熱，好了再把訊息改成有影片的卡片
+        抓不到（沒設定、host 掛了、影片不存在）回傳 False，呼叫端改送一般 embed。"""
+        if not config.VIDEO_PREVIEW_BASE:
+            return False
+        info = await fetch_video_info(self.bot.session, site, video_id)
+        if info is None:
+            return False
+        if not info["playable"]:
+            # 超過大小上限只有縮圖卡片，附一個到原站看影片的按鈕（純連結按鈕，不必註冊、重開後也能用）
+            view = discord.ui.View()
+            view.add_item(discord.ui.Button(label=f"到 {name} 觀看", style=discord.ButtonStyle.link, url=info["page"]))
+            await self._send_and_suppress(message, content=f"[▶ {name}]({preview_url(site, video_id)})", view=view)
+            return True
+        if info.get("cached"):
+            await self._send_and_suppress(message, content=f"[▶ {name}]({preview_url(site, video_id)})")
+            return True
+        sent = await self._send_and_suppress(message, content=f"[▶ {name}]({preview_url(site, video_id, thumb=True)})")
+        task = asyncio.create_task(self._warm_then_show_video(sent, site, video_id, name))
+        self._warm_tasks.add(task)  # 留住參照，避免背景工作被回收
+        task.add_done_callback(self._warm_tasks.discard)
+        return True
+
+    async def _warm_then_show_video(self, sent, site, video_id, name):
+        if not await warm_video(self.bot.session, site, video_id):
+            print(f"[video] {site}/{video_id} 預熱失敗，維持縮圖卡片")
+            return
+        try:
+            await sent.edit(content=f"[▶ {name}]({preview_url(site, video_id, warmed=True)})")
+        except discord.HTTPException as e:  # 訊息被刪掉之類的
+            print(f"[video] {site}/{video_id} 換成影片卡片失敗: {e!r}")
+
+    async def _send_and_suppress(self, message, **kwargs):
+        sent = await message.channel.send(**kwargs)
+        try:
+            await message.edit(suppress=True)
+        except discord.Forbidden:
+            pass
+        return sent
+
+    async def handler_hitomi(self, message, url, match):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="hitomi"):
+            return
+        gallery_id, page = match.groups()
+        try:
+            embed, pages = await hitomi_embed(self.bot.session, gallery_id, int(page or 1),
+                                              cdn=getattr(self.bot, 'image_cdn', None))
+        except Exception as e:
+            print(f"[hitomi] {url} failed: {e!r}")
+            return
+        if embed:
+            view = HitomiView(session=self.bot.session, embed=embed) if pages > 1 else None
+            await self._send_and_suppress(message, embed=embed, **({"view": view} if view else {}), **cdn_files(embed))
+
+    async def handler_ehentai(self, message, url, match):
+        site, gid, token = match.groups()
+        await self._send_ehentai(message, url, gid, token, 1, ex=site == "ex")
+
+    async def handler_ehentai_page(self, message, url, match):
+        # 單頁連結 /s/<imgkey>/<gid>-<頁>：用 API 反查本子 token，從那一頁開始
+        if not self.is_nsfw_channel(message.channel):
+            return
+        site, imgkey, gid, page = match.groups()
+        token =await resolve_page_link(self.bot.session, imgkey, gid, page)
+        if token:
+            await self._send_ehentai(message, url, gid, token, int(page), ex=site == "ex")
+
+    async def _send_ehentai(self, message, url, gid, token, page, ex):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="ehentai"):
+            return
+        try:
+            embed, pages = await ehentai_embed(self.bot.session, gid, token, page,
+                                               cdn=getattr(self.bot, 'image_cdn', None), ex=ex)
+        except Exception as e:
+            print(f"[ehentai] {url} failed: {e!r}")
+            return
+        if embed:
+            view = EHentaiView(session=self.bot.session, embed=embed) if pages > 1 else None
+            await self._send_and_suppress(message, embed=embed, **({"view": view} if view else {}), **cdn_files(embed))
+
+    async def handler_mobile01(self, message, url, match):
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="m01"):
+            return
+        try:
+            # 比對到的網址不含 www，補上才是正式網址
+            embeds = await mobile01_embeds(self.bot.mobile01_crawl, url.replace("https://mobile01.com", "https://www.mobile01.com"))
+        except Exception as e:
+            print(f"[mobile01] {url} failed: {e!r}")
+            return
+        if embeds:
+            await self._send_and_suppress(message, embeds=embeds)
+
+    async def handler_hanime1(self, message, url, match):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="hanime"):
+            return
+        if await self._send_video_preview(message, "hanime", match.group(1), "Hanime1"):
+            return
+        try:
+            embed = await hanime1_embed(self.bot.hanime_crawl, match.group(1))
+        except Exception as e:
+            print(f"[hanime1] {url} failed: {e!r}")
+            return
+        if embed:
+            await self._send_and_suppress(message, embed=embed)
+
+    async def handler_iwara(self, message, url, match):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="iwara"):
+            return
+        if await self._send_video_preview(message, "iwara", match.group(1), "Iwara"):
+            return
+        try:
+            embed = await iwara_embed(self.bot.iwara_crawl, match.group(1))
+        except Exception as e:
+            print(f"[iwara] {url} failed: {e!r}")
+            return
+        if embed:
+            await self._send_and_suppress(message, embed=embed)
+
+    async def handler_iwara_image(self, message, url, match):
+        if not self.is_nsfw_channel(message.channel):
+            return
+        if message.guild is not None and is_embed_ban(server_id=message.guild.id, arg="iwara"):
+            return
+        try:
+            embeds = await iwara_image_embed(self.bot.iwara_crawl, match.group(1))
+        except Exception as e:
+            print(f"[iwara] {url} failed: {e!r}")
+            return
+        if embeds:
+            await self._send_and_suppress(message, embeds=embeds)
 
     async def keyword_handler_gacha(self, message):
         data, status = process_gacha_data(message.author.id, message.channel.id)

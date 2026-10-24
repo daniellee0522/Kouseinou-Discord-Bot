@@ -39,6 +39,26 @@ DOWNLOAD_HEADERS = {
 ATTACHMENT_URL = re.compile(r"cdn\.discordapp\.com/attachments/(\d+)/")
 
 
+class HeaderSrc(str):
+    """下載時要帶額外標頭的圖片網址（例如 hitomi 一定要 Referer，不然回 404）。"""
+
+    def __new__(cls, url, headers):
+        obj = super().__new__(cls, url)
+        obj.headers = headers
+        return obj
+
+
+class LazySrc(str):
+    """下載前才解析真正網址的圖片來源（例如 E-Hentai 每頁的圖要先開該頁才知道）。
+    字串本身只是識別用的頁面網址；resolve() 回傳實際要下載的網址（可以是 HeaderSrc）。
+    預載整本時排隊很便宜，真的輪到下載才去開頁面。"""
+
+    def __new__(cls, page_url, resolve):
+        obj = super().__new__(cls, page_url)
+        obj.resolve = resolve
+        return obj
+
+
 def url_expiry(url):
     """讀取附件網址 ex 參數（16 進位 unix 時間）；沒有的話回傳 None。"""
     try:
@@ -242,6 +262,8 @@ class DiscordImageCDN:
     # ---------- 上傳 ----------
     async def fetch(self, src, transform=None):
         """下載並處理一張圖（transform、過大時壓縮），回傳 (bytes, 副檔名)。"""
+        if isinstance(src, LazySrc):
+            src = await src.resolve()
         data = await self._download(src)
         if transform is not None:
             data, ext = await asyncio.to_thread(transform, data)
@@ -344,11 +366,12 @@ class DiscordImageCDN:
                 except Exception as e:
                     error = e
             raise error
+        extra = getattr(src, "headers", None)
         if self._use_http2:
-            resp = await self._client().get(src)
+            resp = await self._client().get(src, headers=extra)
             resp.raise_for_status()
             return resp.content
-        async with self.bot.session.get(src, headers=DOWNLOAD_HEADERS,
+        async with self.bot.session.get(src, headers={**DOWNLOAD_HEADERS, **(extra or {})},
                                         timeout=aiohttp.ClientTimeout(total=30)) as resp:
             resp.raise_for_status()
             return await resp.read()

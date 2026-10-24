@@ -5,6 +5,7 @@ from pathlib import Path
 from functions.nhentai import test_embed, NumberView
 from functions.wnacg import create_wnacg_embed, NumberView2
 from functions.jm import jm_embed_async, NumberView3
+from functions.ehentai import parse_cookie_text, check_exhentai_cookies, parse_gallery_input, ehentai_embed, EHentaiView
 from functions.cdn_pages import cdn_files, reply_with_send
 from functions.supav import supjav_crawl, supjav_search_embed
 from functions.missav_func import fetch_missav_embed, missav_fallback_embed
@@ -22,11 +23,46 @@ class HentaiEmbedCmd(commands.Cog):
     @app_commands.describe(cf_clearance="cookie1", csrftoken="cookie2")
     async def cookies(self, interaction: discord.Interaction, cf_clearance: str, csrftoken: str):
         if interaction.user.id != config.OWNER_ID:
-            await interaction.response.send_message("你沒有權限使用此指令")
+            await interaction.response.send_message("你沒有權限使用此指令", ephemeral=True)
         else:
             dict_ = {"cf_clearance": cf_clearance, "csrftoken": csrftoken}
             with open(config.DATA_DIR / 'cookies.json', 'w', encoding='utf8') as f:
                 json.dump(dict_, f, ensure_ascii=False, indent=4)
+            await interaction.response.send_message("已更新 cookies", ephemeral=True)
+
+    @app_commands.command(name="excookies", description="更新 ExHentai 登入 cookies（僅限機器人擁有者）")
+    @app_commands.describe(cookie="在 exhentai.org 從瀏覽器複製的 Cookie 字串（要有 ipb_member_id、ipb_pass_hash）",
+                           clear="清除已設定的 cookies，改回只用 e-hentai")
+    @app_commands.default_permissions(administrator=True)
+    async def excookies(self, interaction: discord.Interaction, cookie: str = "", clear: bool = False):
+        if interaction.user.id != config.OWNER_ID:
+            await interaction.response.send_message("你沒有權限使用此指令", ephemeral=True)
+            return
+        if clear:
+            cookies = {}
+        else:
+            cookies = parse_cookie_text(cookie)
+            if not {"ipb_member_id", "ipb_pass_hash"} <= cookies.keys():
+                await interaction.response.send_message("找不到 ipb_member_id 和 ipb_pass_hash，請貼上完整的 Cookie 字串", ephemeral=True)
+                return
+            await interaction.response.defer(ephemeral=True)
+            cookies = await check_exhentai_cookies(self.bot.session, cookies)
+            if cookies is None:
+                await interaction.followup.send("這組 cookies 登入不了 exhentai（可能過期或帳號沒有權限），沒有儲存", ephemeral=True)
+                return
+        # 存回 token.json（重開後也有效），並直接套用到執行中的 bot
+        async with self.bot.data_lock:
+            with open(config.DATA_DIR / 'token.json', 'r', encoding='utf8') as f:
+                data = json.load(f)
+            data["exhentai_cookies"] = cookies
+            with open(config.DATA_DIR / 'token.json', 'w', encoding='utf8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+        config.EXHENTAI_COOKIES = cookies
+        text = "已清除 ExHentai cookies" if clear else f"已更新 ExHentai cookies（{'、'.join(cookies)}）"
+        if interaction.response.is_done():
+            await interaction.followup.send(text, ephemeral=True)
+        else:
+            await interaction.response.send_message(text, ephemeral=True)
 
 
     @app_commands.command(name="wnacg", description="回傳wnacg embed")
@@ -134,6 +170,31 @@ class HentaiEmbedCmd(commands.Cog):
 
         await reply_with_send(interaction, work)
             
+
+    @app_commands.command(name="ehentai", description="回傳 E-Hentai / ExHentai embed", nsfw=True)
+    @app_commands.describe(gallery="本子或單頁網址，或「gid token」（例如 4275260 72689e29a9）",
+                           page="從第幾頁開始（預設第 1 頁；單頁網址會用網址上的頁碼）")
+    async def ehentai(self, interaction: discord.Interaction, gallery: str, page: app_commands.Range[int, 1] = None):
+        async def work():
+            try:
+                parsed = await parse_gallery_input(self.bot.session, gallery)
+            except Exception:
+                parsed = None
+            if parsed is None:
+                return dict(content="看不懂這個本子，請貼 e-hentai / exhentai 網址，或輸入「gid token」", ephemeral=True)
+            gid, token, link_page, ex = parsed
+            try:
+                embed, pages = await ehentai_embed(self.bot.session, gid, token, page or link_page or 1,
+                                                   cdn=getattr(self.bot, 'image_cdn', None), ex=ex)
+            except Exception:
+                embed = None
+            if embed is None:
+                return dict(content="不存在或存取遭拒")
+            view = EHentaiView(session=self.bot.session, embed=embed) if pages > 1 else None
+            return dict(embed=embed, **({"view": view} if view else {}), **cdn_files(embed))
+
+        await reply_with_send(interaction, work)
+
 
     @app_commands.command(name="nhentai", description="回傳nhentai embed")
     @app_commands.describe(digit="神秘數字")
