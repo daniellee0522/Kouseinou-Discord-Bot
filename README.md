@@ -1,4 +1,4 @@
-<img src="https://i.imgur.com/4Lgok1j.png" width="128" height="128" alt="Kouseinou Bot logo">
+<img src="docs/images/logo.png" width="128" height="128" alt="Kouseinou Bot logo">
 
 # 高性能bot (Kouseinou Bot)
 
@@ -39,6 +39,10 @@ Gallery messages (nhentai, wnacg, 禁漫天堂, E-Hentai / ExHentai, hitomi, and
 
 **Bookmarks:** right-click a gallery preview → **Apps → 加入書籤** and the bot DMs you that page with working page buttons; keep reading in the DM and the bookmark stays on your latest page. Bookmarking the same gallery again replaces the old one. `/書籤 列表` lists your bookmarks (optionally filtered by site), `/書籤 新增` adds one from a message link, and each bookmark in the list has its own delete button. Bookmarks are only the bot's messages in your DMs; nothing is stored on the bot's host, and you need to allow DMs from server members.
 
+<img src="docs/images/bookmark-dm.png" width="600" alt="Bookmark sent to your DMs">
+
+<img src="docs/images/bookmark-list.png" width="560" alt="/書籤 列表 bookmark list">
+
 Failed video lookups return a result or error message; there is no persistent background retry queue.
 
 **Current limitations:**
@@ -47,11 +51,7 @@ Failed video lookups return a result or error message; there is no persistent ba
 - Automatic previews for wnacg (including single-page links), nhentai, E-Hentai / ExHentai, hitomi, kemono / coomer, Hanime1, Iwara, XVideos, and Pornhub require an age-restricted server channel. Threads use the parent channel's setting. This check does not block DMs, and it is not applied to 禁漫天堂, MissAV, Jable, or Supjav links. Among slash commands, only `/ehentai` checks for an age-restricted channel (it also works in DMs).
 - `/解析網頁開關` saves per server. MissAV, Jable, Supjav, and Pornhub previews do not have a switch yet.
 
-![Gallery preview](https://i.imgur.com/07vfj6h.png)
-
-![Gallery preview with navigation](https://i.imgur.com/eU74DDa.png)
-
-![Gallery preview example](https://i.imgur.com/YJMhBa4.png)
+<img src="docs/images/gallery-preview.png" width="600" alt="Gallery preview with page buttons">
 
 ### Anime update notifications
 
@@ -68,11 +68,11 @@ Subscriptions and the notification channel are configured per server.
 
 The bot checks subscribed shows around their scheduled update times and posts new-episode notifications. This feature does not require Server Members Intent.
 
-![Anime list](https://i.imgur.com/B5oBv5V.png)
+<img src="docs/images/anime-list.png" width="580" alt="Anime list">
 
-![Anime subscription](https://i.imgur.com/1pm5vhR.png)
+<img src="docs/images/anime-subscribe.png" width="420" alt="Anime subscription">
 
-![New episode notification](https://i.imgur.com/cCWWAat.png)
+<img src="docs/images/anime-notification.png" width="560" alt="New episode notification">
 
 ### Gacha simulator
 
@@ -83,7 +83,7 @@ The rate-up banner follows the Blue Archive Global server automatically: the bot
 - `/統計` shows your results; `/歸零` resets your statistics.
 - `/上鎖` and `/解鎖` control whether the simulator can be used in a channel, subject to the commands' permission checks.
 
-![Gacha result](https://i.imgur.com/klAeQCZ.png)
+<img src="docs/images/gacha-result.png" width="520" alt="Gacha ten-pull result">
 ![Gacha statistics](https://i.imgur.com/X5b6jFl.png)
 
 ### Welcome messages
@@ -187,7 +187,7 @@ In 地牛 Wake UP!, the collaboration directory is set under `setting > others`:
 
 ![地牛 Wake UP! collaboration setting](https://i.imgur.com/z1Kxj6T.png)
 
-![Earthquake notification example](https://i.imgur.com/V7VxXmL.png)
+<img src="docs/images/earthquake-alert.png" width="520" alt="Earthquake alert example">
 
 ## Contributing
 
